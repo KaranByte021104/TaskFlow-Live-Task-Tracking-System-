@@ -1,0 +1,8 @@
+{
+  "name": "task-tracker-monorepo",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ]
+}
