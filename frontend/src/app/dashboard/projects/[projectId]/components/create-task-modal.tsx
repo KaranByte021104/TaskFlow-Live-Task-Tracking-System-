@@ -9,7 +9,7 @@ import Modal from '@/components/ui/modal';
 import Input from '@/components/ui/input';
 import Button from '@/components/ui/button';
 import { getProjectApi } from '@/lib/projects-api';
-import { createTaskApi, TaskStatus, TaskPriority, uploadTaskImagesApi } from '@/lib/tasks-api';
+import { createTaskApi, TaskStatus, TaskPriority, uploadTaskImagesApi, getProjectLabelsApi, addLabelToTaskApi } from '@/lib/tasks-api';
 import ImageUploader from './image-uploader';
 import { useToastStore } from '@/store/useToastStore';
 
@@ -35,10 +35,17 @@ export default function CreateTaskModal({ isOpen, onClose, projectId, status }: 
   const { addToast } = useToastStore();
   const [pendingFiles, setPendingFiles] = React.useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [selectedLabelIds, setSelectedLabelIds] = React.useState<string[]>([]);
 
   const { data: projectDetail } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => getProjectApi(projectId),
+    enabled: isOpen && !!projectId,
+  });
+
+  const { data: projectLabels = [] } = useQuery({
+    queryKey: ['project-labels', projectId],
+    queryFn: () => getProjectLabelsApi(projectId),
     enabled: isOpen && !!projectId,
   });
 
@@ -83,6 +90,14 @@ export default function CreateTaskModal({ isOpen, onClose, projectId, status }: 
         }
       }
 
+      for (const labelId of selectedLabelIds) {
+        try {
+          await addLabelToTaskApi(newTask.id, labelId);
+        } catch (labelErr) {
+          addToast('Failed to add some labels to the task.', 'warning');
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
       queryClient.invalidateQueries({ queryKey: ['activities', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project-stats', projectId] });
@@ -91,6 +106,7 @@ export default function CreateTaskModal({ isOpen, onClose, projectId, status }: 
 
       reset();
       setPendingFiles([]);
+      setSelectedLabelIds([]);
       onClose();
     } catch (err: any) {
       addToast(err.response?.data?.message || 'Failed to create task.', 'error');
@@ -165,6 +181,37 @@ export default function CreateTaskModal({ isOpen, onClose, projectId, status }: 
               </option>
             ))}
           </select>
+        </div>
+
+        {/* Labels Selection */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
+            Labels
+          </label>
+          <div className="flex flex-wrap gap-2 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+            {projectLabels.length > 0 ? (
+              projectLabels.map((lbl: any) => (
+                <label key={lbl.id} className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-full hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                  <input
+                    type="checkbox"
+                    checked={selectedLabelIds.includes(lbl.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedLabelIds([...selectedLabelIds, lbl.id]);
+                      } else {
+                        setSelectedLabelIds(selectedLabelIds.filter((id) => id !== lbl.id));
+                      }
+                    }}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: lbl.color }} />
+                  <span className="text-slate-705 dark:text-slate-300">{lbl.name}</span>
+                </label>
+              ))
+            ) : (
+              <span className="text-xs text-slate-400 italic">No labels available in this project. Create them in project settings.</span>
+            )}
+          </div>
         </div>
 
         {/* Attachments Section */}

@@ -7,8 +7,11 @@ import {
   Param,
   Body,
   UseGuards,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ProjectsService } from './projects.service';
+import { ExportService } from './export.service';
 import {
   CreateProjectDto,
   UpdateProjectDto,
@@ -21,7 +24,10 @@ import { ProjectRole } from '@prisma/client';
 @UseGuards(JwtAuthGuard)
 @Controller('projects')
 export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+  constructor(
+    private readonly projectsService: ProjectsService,
+    private readonly exportService: ExportService,
+  ) {}
 
   @Post()
   async create(
@@ -113,5 +119,34 @@ export class ProjectsController {
     @Param('memberId') memberId: string,
   ) {
     return this.projectsService.removeMember(projectId, userId, memberId);
+  }
+  @Get(':id/export/csv')
+  async exportCsv(
+    @Param('id') projectId: string,
+    @GetUser() user: any,
+    @Res() res: any,
+  ) {
+    const csvContent = await this.exportService.exportToCsv(projectId, user.id);
+    const project = await this.projectsService.findOne(projectId, user.id);
+    const slug = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${slug}-export.csv"`);
+    res.status(200).send(csvContent);
+  }
+
+  @Get(':id/export/pdf')
+  async exportPdf(
+    @Param('id') projectId: string,
+    @GetUser() user: any,
+    @Res() res: any,
+  ) {
+    const pdfBuffer = await this.exportService.exportToPdf(projectId, user.id);
+    const project = await this.projectsService.findOne(projectId, user.id);
+    const slug = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${slug}-export.pdf"`);
+    res.status(200).send(pdfBuffer);
   }
 }

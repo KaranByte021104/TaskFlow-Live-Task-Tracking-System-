@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -120,6 +121,22 @@ export class TasksService {
             avatarUrl: true,
           },
         },
+        labels: {
+          include: {
+            label: true,
+          },
+        },
+        dependencies: {
+          include: {
+            blockedBy: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -196,6 +213,22 @@ export class TasksService {
           select: {
             comments: true,
             images: true,
+          },
+        },
+        labels: {
+          include: {
+            label: true,
+          },
+        },
+        dependencies: {
+          include: {
+            blockedBy: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+              },
+            },
           },
         },
       },
@@ -282,6 +315,22 @@ export class TasksService {
             createdAt: 'asc',
           },
         },
+        labels: {
+          include: {
+            label: true,
+          },
+        },
+        dependencies: {
+          include: {
+            blockedBy: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -317,6 +366,27 @@ export class TasksService {
     });
     if (!originalTask) {
       throw new NotFoundException('Task not found');
+    }
+
+    // Check task blockers if moving to IN_PROGRESS
+    if (data.status === TaskStatus.IN_PROGRESS && originalTask.status !== TaskStatus.IN_PROGRESS) {
+      const blockers = await this.prisma.taskDependency.findMany({
+        where: { taskId },
+        include: {
+          blockedBy: {
+            select: {
+              title: true,
+              status: true,
+            },
+          },
+        },
+      });
+
+      const unresolved = blockers.filter((b: any) => b.blockedBy.status !== TaskStatus.COMPLETED);
+      if (unresolved.length > 0) {
+        const titles = unresolved.map((u: any) => u.blockedBy.title).join(', ');
+        throw new BadRequestException(`This task is blocked by: ${titles}. Complete those tasks first.`);
+      }
     }
 
     // Concurrency conflict check
@@ -363,6 +433,22 @@ export class TasksService {
             images: true,
           },
         },
+        labels: {
+          include: {
+            label: true,
+          },
+        },
+        dependencies: {
+          include: {
+            blockedBy: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -378,16 +464,37 @@ export class TasksService {
       userDisplayName: updaterUser?.displayName || 'Someone',
     });
 
+    // Capture changes for activity log
+    const changes: any = {};
+    if (data.title && data.title !== originalTask.title) {
+      changes.title = { old: originalTask.title, new: data.title };
+    }
+    if (data.description !== undefined && data.description !== originalTask.description) {
+      changes.description = { old: originalTask.description, new: data.description };
+    }
+    if (data.priority && data.priority !== originalTask.priority) {
+      changes.priority = { old: originalTask.priority, new: data.priority };
+    }
+    if (data.assigneeId !== undefined && data.assigneeId !== originalTask.assigneeId) {
+      changes.assigneeId = { old: originalTask.assigneeId, new: data.assigneeId };
+    }
+    if (data.dueDate !== undefined && (data.dueDate ? new Date(data.dueDate).getTime() : null) !== (originalTask.dueDate ? new Date(originalTask.dueDate).getTime() : null)) {
+      changes.dueDate = { old: originalTask.dueDate, new: data.dueDate };
+    }
+
     // Log Activity: TASK_UPDATED
-    await this.logAndEmitActivity(
-      projectId,
-      userId,
-      taskId,
-      ActivityType.TASK_UPDATED,
-      {
-        taskTitle: updatedTask.title,
-      },
-    );
+    if (Object.keys(changes).length > 0) {
+      await this.logAndEmitActivity(
+        projectId,
+        userId,
+        taskId,
+        ActivityType.TASK_UPDATED,
+        {
+          taskTitle: updatedTask.title,
+          changes,
+        },
+      );
+    }
 
     // Log Activity: STATUS_CHANGED / TASK_COMPLETED
     if (data.status && data.status !== originalTask.status) {
@@ -441,5 +548,244 @@ export class TasksService {
     });
 
     return { success: true, message: 'Task deleted successfully' };
+  }
+
+  // Get full task history (audit log)
+  async getHistory(taskId: string, userId: string) {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      select: { projectId: true },
+    });
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
+
+    await this.checkProjectMembership(task.projectId, userId);
+
+    return this.prisma.activity.findMany({
+      where: { taskId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
+  // Check if adding a dependency from taskId to blockedByTaskId would create a circular chain
+  private async isCircular(
+    taskId: string,
+    blockedByTaskId: string,
+    visited: Set<string> = new Set(),
+  ): Promise<boolean> {
+    if (taskId === blockedByTaskId) return true;
+    if (visited.has(blockedByTaskId)) return false;
+    visited.add(blockedByTaskId);
+
+    const blockers = await this.prisma.taskDependency.findMany({
+      where: { taskId: blockedByTaskId },
+    });
+
+    for (const b of blockers) {
+      if (b.blockedByTaskId === taskId) return true;
+      const circular = await this.isCircular(taskId, b.blockedByTaskId, visited);
+      if (circular) return true;
+    }
+    return false;
+  }
+
+  // Add a task dependency
+  async addDependency(userId: string, taskId: string, blockedByTaskId: string) {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+    });
+    const blocker = await this.prisma.task.findUnique({
+      where: { id: blockedByTaskId },
+    });
+    if (!task || !blocker) {
+      throw new NotFoundException('Task not found');
+    }
+
+    if (task.projectId !== blocker.projectId) {
+      throw new ForbiddenException('Tasks must belong to the same project');
+    }
+
+    const role = await this.checkProjectMembership(task.projectId, userId);
+    if (role === ProjectRole.VIEWER) {
+      throw new ForbiddenException('Viewers cannot modify task dependencies');
+    }
+
+    if (taskId === blockedByTaskId) {
+      throw new ForbiddenException('A task cannot be blocked by itself');
+    }
+
+    const wouldBeCircular = await this.isCircular(taskId, blockedByTaskId);
+    if (wouldBeCircular) {
+      throw new ForbiddenException('Circular dependencies are not allowed');
+    }
+
+    const existing = await this.prisma.taskDependency.findUnique({
+      where: {
+        taskId_blockedByTaskId: { taskId, blockedByTaskId },
+      },
+    });
+
+    if (!existing) {
+      await this.prisma.taskDependency.create({
+        data: {
+          taskId,
+          blockedByTaskId,
+        },
+      });
+    }
+
+    const updatedTask = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        assignee: {
+          select: { id: true, displayName: true, email: true, avatarUrl: true },
+        },
+        labels: {
+          include: { label: true },
+        },
+        _count: {
+          select: { comments: true, images: true },
+        },
+      },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true },
+    });
+
+    this.realtimeGateway.sendToProjectRoom(task.projectId, 'task:updated', {
+      task: updatedTask,
+      userId,
+      userDisplayName: user?.displayName || 'Someone',
+    });
+
+    return updatedTask;
+  }
+
+  // Remove a task dependency
+  async removeDependency(userId: string, taskId: string, blockedByTaskId: string) {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+    });
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
+
+    const role = await this.checkProjectMembership(task.projectId, userId);
+    if (role === ProjectRole.VIEWER) {
+      throw new ForbiddenException('Viewers cannot modify task dependencies');
+    }
+
+    const existing = await this.prisma.taskDependency.findUnique({
+      where: {
+        taskId_blockedByTaskId: { taskId, blockedByTaskId },
+      },
+    });
+
+    if (existing) {
+      await this.prisma.taskDependency.delete({
+        where: {
+          taskId_blockedByTaskId: { taskId, blockedByTaskId },
+        },
+      });
+    }
+
+    const updatedTask = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        assignee: {
+          select: { id: true, displayName: true, email: true, avatarUrl: true },
+        },
+        labels: {
+          include: { label: true },
+        },
+        _count: {
+          select: { comments: true, images: true },
+        },
+      },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true },
+    });
+
+    this.realtimeGateway.sendToProjectRoom(task.projectId, 'task:updated', {
+      task: updatedTask,
+      userId,
+      userDisplayName: user?.displayName || 'Someone',
+    });
+
+    return updatedTask;
+  }
+
+  // Get dependencies (blockedBy and blocking lists)
+  async getDependencies(userId: string, taskId: string) {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+    });
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
+
+    await this.checkProjectMembership(task.projectId, userId);
+
+    const blockedByRecords = await this.prisma.taskDependency.findMany({
+      where: { taskId },
+      include: {
+        blockedBy: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            assignee: {
+              select: {
+                id: true,
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const blockingRecords = await this.prisma.taskDependency.findMany({
+      where: { blockedByTaskId: taskId },
+      include: {
+        task: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            assignee: {
+              select: {
+                id: true,
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return {
+      blockedBy: blockedByRecords.map((r: any) => r.blockedBy),
+      blocking: blockingRecords.map((r: any) => r.task),
+    };
   }
 }

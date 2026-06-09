@@ -1,7 +1,7 @@
 # Task Tracker - Live Collaboration Tool
 
 ## Project Overview
-Task Tracker is a real-time, lightweight project management and collaborative task tracking application designed as a modern, high-performance alternative to platforms like Jira or Trello. It provides team members and project managers with interactive Kanban boards, activity feeds, instant notifications, and task image attachments, ensuring seamless workflow synchronization.
+Task Tracker is a real-time, lightweight project management and collaborative task tracking application designed as a modern, high-performance alternative to platforms like Jira or Trello. It provides team members and project managers with interactive Kanban boards, activity feeds, instant notifications, task image attachments, custom labels, blocking task dependency enforcement, and detailed PDF/CSV data export capabilities, ensuring seamless workflow synchronization and robust project tracking.
 
 ---
 
@@ -18,8 +18,10 @@ Task Tracker is a real-time, lightweight project management and collaborative ta
 | **Zustand** | Lightweight client-side state management for user authentication, toast alerts, and theme preferences. |
 | **React Query** | Handles server-state caching, fetching, synchronization, and optimistic UI updates on the frontend. |
 | **Tailwind CSS** | Utility-first CSS framework for responsive, modern styling and Dark Mode styling. |
-| **Multer** | Middleware for handling `multipart/form-data` uploads (used for task image attachments). |
+| **Multer** | Middleware for handling `multipart/form-data` uploads (used for task image attachments and user avatar uploads). |
 | **Nodemailer** | Library for sending secure OTP email messages via Gmail SMTP. |
+| **json2csv** | Utilized on the backend to parse database models and generate structured project CSV exports. |
+| **pdfmake** | Backend PDF generation engine used to compile structured PDF documents with custom styling and cover pages. |
 
 ---
 
@@ -86,7 +88,7 @@ Follow these numbered steps to clone and run the application locally.
 | `JWT_EXPIRES_IN` | Token expiration lifespan. | `7d` |
 | `PORT` | Listening port for the NestJS API application server. | `3001` |
 | `FRONTEND_URL` | Allowed origin URL for CORS configuration. | `http://localhost:3000` |
-| `BACKEND_URL` | Base public URL of the backend (used to construct image attachment paths). | `http://localhost:3001` |
+| `BACKEND_URL` | Base public URL of the backend (used to construct image attachment and avatar paths). | `http://localhost:3001` |
 | `SMTP_USER` | Gmail SMTP email address used to send verification and password reset emails. | `user@gmail.com` |
 | `SMTP_PASS` | Gmail app password (requires Google App Password configuration). | `abcd efgh ijkl mnop` |
 | `OTP_JWT_SECRET` | JWT secret used to sign and verify short-lived OTP verification tokens. | `super-secret-otp-jwt-key-replace-in-production` |
@@ -106,25 +108,31 @@ Follow these numbered steps to clone and run the application locally.
 - **Prisma**: Selected as the database ORM due to its auto-generated type safety, clear declarative schema models, and easy migration tooling.
 - **Zustand & React Query**: We separate global UI state (auth, toast messages, and dark/light themes managed by Zustand) from asynchronous server data (caching, pagination, and data mutations managed by React Query).
 - **Socket.IO Project-Based Rooms**: To minimize server memory and network overhead, users subscribe to specific rooms (`project:<projectId>`). Real-time status changes, comments, and task modifications are broadcast only to active members in that specific project space.
-- **Local Filesystem Image Storage**: Local filesystem storage is utilized for handling image uploads. This is a lightweight, zero-dependency approach perfect for local development and testing, keeping the system self-contained.
+- **Local Filesystem Image & Avatar Storage**: Local filesystem storage is utilized for handling task image attachments (under `uploads/tasks/`) and user avatars (under `uploads/avatars/`). This is a lightweight, zero-dependency approach perfect for local development and testing, keeping the system self-contained.
+- **Nodemailer with Gmail SMTP**: Selected to deliver reliable, transaction-based OTP (One-Time Password) recovery emails securely without registering with commercial email brokers.
 
 ---
 
-## Features List
+## Full Features List
 
-- **Project Management**: Creation and customization of projects with role-based member invitations.
-- **Interactive Kanban Board**: Dynamic drag-and-drop task status updates.
-- **Real-Time Collaboration**: Automatic syncing of task changes, comments, and project presence indicators.
-- **Task Comments**: Real-time collaborative comment threads under specific tasks.
-- **Image Attachments**: Support for uploading, viewing, and deleting multiple image files per task.
-- **Unified Activity Feed**: Dynamic log of all project and member updates.
+- **Project Management**: Creation and customization of projects with role-based member invitations (Admin, Member, Viewer).
+- **Interactive Kanban Board**: Dynamic drag-and-drop task status updates across four columns: To Do, In Progress, Review, and Completed.
+- **Real-Time Collaboration**: Automatic syncing of task status changes, comments, attachments, and project presence indicators.
+- **Task Comments & Emoji Reactions**: Real-time collaborative comment threads under specific tasks with toggleable emoji reaction buttons.
+- **Image Attachments**: Support for uploading, viewing, and deleting multiple image files per task with instant live synchronization.
+- **Project-Specific Labels**: Define, edit, and apply custom colored tags to categorize tasks within a project.
+- **Task Dependencies**: Establish links between tasks (blocked by / blocking) with strict column transitions block (e.g. cannot start a task if its blockers are unresolved).
+- **Audit Logs & History**: Real-time logging of task updates (creation, title/description edits, assignee modifications, due dates, status shifts) visible in an expanded history view.
+- **Unified Activity Feed**: Dynamic log of all project and member activities per project space.
 - **Dashboard Statistics**: Global and project-specific charts displaying overall completion progress.
-- **Theme Toggle**: Full light and dark mode styling with persistent local settings.
+- **User Profile Page**: Custom user settings panel enabling name and email updates, alongside custom avatar uploads (with auto-updating fallback initials).
+- **Theme Toggle**: Full light and dark mode styling with persistent local settings and native date indicator inversion.
 - **Optimistic UI & Toasts**: Instant feedback via toast notifications and fluid UI responses.
 - **Optimistic Concurrency Control**: Prevents users from overwriting each other's changes if updates happen simultaneously.
 - **OTP Password Recovery**: Secure password reset flow using a 6-digit OTP code sent via Gmail SMTP, verified with a short-lived token.
 - **Change Password**: Allows logged-in users to update their password from the sidebar, automatically logging them out and triggering a success notification on redirect.
 - **Show/Hide Password Toggle**: Independent visibility toggle button (eye/eye-off icons) integrated into every password input field.
+- **CSV and PDF Export**: Export comprehensive project snapshots (tasks, comments, activity log) into high-fidelity PDF layouts (with cover pages) and CSV tables.
 
 ---
 
@@ -140,8 +148,15 @@ Follow these numbered steps to clone and run the application locally.
 | **Edit Tasks** | Yes | Yes | No |
 | **Delete Tasks** | Yes *(Or Task Creator)* | No *(Unless Task Creator)* | No |
 | **Post Comments** | Yes | Yes | Yes |
+| **Edit/Delete Comments** | Yes *(Creator only)* | Yes *(Creator only)* | Yes *(Creator only)* |
+| **Add Emoji Reactions** | Yes | Yes | Yes |
 | **Upload Images** | Yes | Yes | No |
 | **Delete Images** | Yes | Yes *(Uploader only)* | No |
+| **Create/Edit/Delete Labels** | Yes | No | No |
+| **Add/Remove Task Labels** | Yes | Yes | No |
+| **Add/Remove Task Dependencies**| Yes | Yes | No |
+| **Update Own Profile** | Yes | Yes | Yes |
+| **Export Project Data (CSV/PDF)**| Yes | Yes | Yes |
 
 ---
 
@@ -152,4 +167,4 @@ Follow these numbered steps to clone and run the application locally.
 - **In-Memory Presence Tracking**: Active user project rooms are tracked inside the application's RAM. A horizontal-scaling model would require a Redis adapter.
 - **No Rate Limiting**: The API endpoints are not rate-limited.
 - **No File Content Scan**: Uploaded image attachments undergo extension and MIME verification but are not scanned for malicious scripts or malware.
-
+- **Server-Side PDF Generation**: PDF documents are fully compiled in-memory on the backend using `pdfmake`, which may cause resource usage spikes for very large project exports with hundreds of tasks.

@@ -23,16 +23,16 @@ graph TD
 
     subgraph Storage ["Storage Systems"]
         Postgres[(PostgreSQL Database)]
-        LocalFS["Local Filesystem (./uploads/tasks/)"]
+        LocalFS["Local Filesystem (./uploads/)"]
     end
 
     %% Client Interactions
-    NextJS -- "HTTP requests (JSON CRUD, Multipart Images)" --> RestAPI
+    NextJS -- "HTTP requests (JSON CRUD, Multipart Files, Downloads)" --> RestAPI
     NextJS -- "WebSockets (presence, events)" --> SocketGateway
-    NextJS -- "HTTP GET (Static Image URLs)" --> StaticServer
+    NextJS -- "HTTP GET (Static Image/Avatar URLs)" --> StaticServer
 
     %% Backend Internals & Storage Connectors
-    RestAPI -- "Read/Write files" --> LocalFS
+    RestAPI -- "Read/Write task images & user avatars" --> LocalFS
     StaticServer -- "Read files" --> LocalFS
     RestAPI -- "Database queries" --> PrismaClient
     SocketGateway -- "Verify rooms / memberships" --> PrismaClient
@@ -40,6 +40,7 @@ graph TD
     
     %% Internal Event Dispatches
     RestAPI -- "Trigger Gateway broadcast" --> SocketGateway
+    RestAPI -- "Gmail SMTP (Nodemailer)" --> GmailSMTP["Gmail SMTP Server"]
 ```
 
 ---
@@ -54,9 +55,49 @@ Authentication is stateless and uses JSON Web Tokens (JWT).
 
 ---
 
-## OTP-Based Password Reset Flow
+## Real-Time and Asynchronous Flow Explanations
 
-For users who have forgotten their password, the application implements a secure 3-step OTP verification flow:
+### 1. Real-Time Task Update Flow
+When a user updates a task (e.g., changes its status on the Kanban board):
+1. **User Action**: User moves a task card from one column to another.
+2. **Client Dispatch**: The Next.js client performs an optimistic update in its local cache and issues a `PATCH` request to `/api/projects/:projectId/tasks/:taskId` containing the new `status`.
+3. **Database Write**: The REST API validates permissions, checks task blockers (unresolved dependencies block status transitions to `IN_PROGRESS`), and updates the database record via Prisma.
+4. **Activity Logging**: The API logs a `STATUS_CHANGED` activity record.
+5. **Gateway Trigger**: The API triggers the `RealtimeGateway` to broadcast:
+   - `task:updated` (with the updated task payload)
+   - `activity:new` (with the new activity details)
+6. **WS Broadcast**: The gateway broadcasts the events to the Socket.IO room `project:<projectId>`.
+7. **Cache Synchronization**: All active clients in the room receive the events, invalidate/update their React Query caches, and the board/activity feed re-renders instantly without reloading the page.
+8. **Rollback**: If the server rejects the update (e.g. task is blocked), the client receives a 400/409 error toast and the UI immediately rolls the card back to its original column.
+
+---
+
+### 2. Real-Time Task Image Upload Flow
+When a user attaches images to a task:
+1. **Selection**: User selects up to 10 images (JPEG, PNG, WebP, GIF, under 5MB per file) and uploads them.
+2. **Multipart Request**: Next.js client submits a `multipart/form-data` request containing file objects to `/api/tasks/:taskId/images`.
+3. **File System Write**: The REST API intercepts the payload, validates constraints, and writes the files to local disk under `uploads/tasks/` using a UUID prefix to prevent collisions.
+4. **Database Registration**: The API creates `TaskImage` records pointing to the static URLs.
+5. **Gateway Broadcast**: The API triggers the `RealtimeGateway` to broadcast `task:images_updated` containing the new images array to the `project:<projectId>` room.
+6. **UI Render**: Active clients catch the socket broadcast, update their cache (`['task-images', projectId, taskId]`), and render the new thumbnail gallery instantly.
+
+---
+
+### 3. Real-Time Emoji Reaction Flow
+When a user reacts to a comment with an emoji:
+1. **Click Event**: User clicks an emoji reaction pill (or selects a new emoji) on a comment.
+2. **Client Toggle**: Next.js client toggles the reaction locally and fires a `POST` request to `/api/comments/:commentId/reactions` with the `emoji`.
+3. **Toggle Logic**: The REST API checks if the user has already reacted with this emoji. If yes, it deletes the reaction record. If no, it creates a new `CommentReaction` record.
+4. **Socket Broadcast**: The API triggers the gateway to broadcast `comment:reaction_updated` containing the comment ID and the new reactions collection.
+5. **Dynamic Updates**: All clients viewing the comment feed receive the broadcast, update their query cache for `['comments', taskId]`, and re-render reaction pills dynamically.
+
+---
+
+### 4. OTP Password Reset Flow
+For users who have forgotten their password:
+1. **Requesting Code**: The user submits their email on `/forgot-password`. The backend generates a secure 6-digit numeric OTP, saves it in `otp_tokens` with a 15-minute expiry, and sends an email via Nodemailer using Gmail SMTP.
+2. **OTP Verification**: The user enters the 6-digit code. The client posts the code to `/api/auth/verify-otp`. The backend checks for a valid unused token. If valid, it marks the OTP as used and returns a short-lived (10-minute) verification JWT token signed with `OTP_JWT_SECRET`.
+3. **Password Update**: The user inputs a new password. The client posts the password and verification JWT to `/api/auth/set-new-password`. The backend verifies the token payload, hashes the new password with bcrypt, updates the user's password, and returns a success response.
 
 ```mermaid
 sequenceDiagram
@@ -93,51 +134,32 @@ sequenceDiagram
     Frontend->>User: Display success message & "Go to Login" button
 ```
 
-1. **Requesting the OTP**: The user inputs their email address on `/forgot-password`. The backend generates a secure 6-digit code, saves it to the database with a 15-minute expiration, and fires an email via Nodemailer using Gmail SMTP. The API returns a generic message to prevent email enumeration.
-2. **Verifying the OTP**: The user enters the code on `/verify-otp`. The frontend features an auto-focusing 6-box input layout. If correct, the backend issues a short-lived (10-minute) verification token signed with `OTP_JWT_SECRET`.
-3. **Setting the New Password**: The user inputs their new password on `/set-new-password`. The backend validates the JWT, updates the password, and marks the OTP code as used.
-
 ---
 
-## Change Password Flow (Sidebar / Authenticated)
-
-Logged-in users can update their password securely from the sidebar:
-
-1. **Modal Entry**: The user clicks the "Change Password" option at the bottom of the sidebar to open the change password modal.
-2. **Validation**: The user inputs their current password, a new password, and confirms the new password. The inputs use the reusable `PasswordInput` component with a toggleable eye icon.
-3. **Backend Verification**: The backend validates that the new passwords match, verifies the current password hash with bcrypt, and applies the new hashed password.
-4. **Session Termination**: On success, the frontend clears the authentication store (Zustand) and redirects the user to `/login` with a `message=Password changed. Please sign in with your new password.` query parameter, which is displayed as a success toast notification on the login page.
-
----
-
-## Real-Time Collaboration Workflows
-
-### 1. Task Status Change Flow
-
-When a user changes a task status on the Kanban board:
-1. The **Next.js Client** sends a `PATCH` request to `/api/projects/:projectId/tasks/:taskId` containing the new `status` value.
-2. The **REST API** validates permissions and updates the database record via Prisma.
-3. The **REST API** triggers the `RealtimeGateway` service method `sendToProjectRoom(projectId, 'task:updated', ...)`.
-4. The gateway broadcasts the updated task model to all socket connections joined in the room: `project:<projectId>`.
-5. Other active frontend clients receive the `task:updated` event, and **React Query** updates the local cache, automatically moving the task card on other users' screens.
-6. The REST API logs a `STATUS_CHANGED` activity record and broadcasts `activity:new` to the project room so the feed updates instantly.
-
-### 2. Collaborative Image Upload Flow
-
-When a user attaches images to a task:
-1. The **Next.js Client** submits a `multipart/form-data` request containing file objects in the `images` field to `/api/tasks/:taskId/images`.
-2. The **REST API** interceptor checks size/MIME constraints, writes files to disk, and registers records in the `task_images` database table.
-3. The **REST API** triggers `sendToProjectRoom(projectId, 'task:images_updated', ...)`.
-4. The gateway broadcasts the updated images list to all clients currently viewing that project's boards.
-5. Receivers' screens refresh their image attachments gallery dynamically without manual page reloads.
+### 5. Export Flow
+To back up or review project data:
+1. **Trigger**: User navigates to Project Settings and clicks "Export to CSV" or "Export to PDF".
+2. **API Request**: The browser makes an authenticated `GET` request to `/api/projects/:projectId/export/csv` or `/api/projects/:projectId/export/pdf`.
+3. **Compile Snapshot**: The backend fetches the project details, all member profiles, tasks, comments, and project activities from the database via Prisma in a single transaction.
+4. **Format File**:
+   - **CSV**: Uses `json2csv` to compile tasks, comments, and activities into structured CSV tables.
+   - **PDF**: Uses `pdfmake` to compile a multi-page document featuring a stylized cover page, tasks tabular view, details cards, comments, and audit timeline.
+5. **Response Streaming**: The REST API writes response headers:
+   - `Content-Type: text/csv` or `application/pdf`
+   - `Content-Disposition: attachment; filename="export-project-xxxx.csv/pdf"`
+   It then streams the generated bytes directly to the response socket.
+6. **Download**: The browser detects the file headers and automatically triggers a local download popup.
 
 ---
 
 ## Static File Serving Approach
 
-- **Storage Location**: Uploaded task images are saved under `backend/uploads/tasks/` using a UUID-generated filename to prevent file-naming collisions (e.g., `550e8400-e29b-41d4-a716-446655440000.png`).
-- **Serving Static Assets**: NestJS configures standard Express static middleware mapping the `/uploads` path to the filesystem directory. File requests at `http://localhost:3001/uploads/...` bypass database routing and are served directly.
-- **Access Control Details**: Static file paths do not require JWT authentication for read access. This is a deliberate design decision to allow rapid browser loading of assets (via standard `<img>` tags). Access control checks are strictly enforced during the **upload** and **delete** stages via API validation.
+- **Asset Storage Directories**:
+  - Task images are saved under `backend/uploads/tasks/`.
+  - User profile avatars are saved under `backend/uploads/avatars/`.
+- **Naming Rule**: Files are renamed with a UUID (e.g., `a75e3a89-23f2-45e0-b98a-2ea0203f0cd8.jpg`) upon save to prevent overlapping files or path injections.
+- **Serving Configuration**: NestJS makes use of standard `serve-static` middleware mapping the `/uploads` context path to the physical folders. A request to `http://localhost:3001/uploads/tasks/...` or `/uploads/avatars/...` is served directly by the server engine.
+- **Public Access Design**: Reading files does not require JWT authorization headers. This makes it possible to include direct URL links inside standard HTML elements (`<img>` or `style="background-image: ..."`). Security is enforced by restricting the **write** (`POST`) and **delete** (`DELETE`) API routes using JWT authentication and project membership guards.
 
 ---
 

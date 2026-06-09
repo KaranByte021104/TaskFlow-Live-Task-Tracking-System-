@@ -134,18 +134,21 @@ export default function Sidebar({ isOpen, onClose, onNewProject }: SidebarProps)
         </div>
       </div>
 
-      {/* Bottom user profile & sign out */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0b0f19] flex items-center justify-between transition-colors duration-200">
         {user && (
           <>
-            <div className="flex items-center space-x-3 overflow-hidden">
-              <Avatar name={user.displayName} size="sm" />
+            <Link
+              href="/dashboard/profile"
+              onClick={onClose}
+              className="flex items-center space-x-3 overflow-hidden group cursor-pointer hover:opacity-85 transition"
+            >
+              <Avatar name={user.displayName} src={user.avatarUrl} size="sm" />
               <div className="truncate text-left">
-                <p className="text-xs font-bold text-slate-800 dark:text-white truncate leading-tight">{user.displayName}</p>
+                <p className="text-xs font-bold text-slate-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition truncate leading-tight">{user.displayName}</p>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate leading-none mt-0.5">{user.email}</p>
               </div>
-            </div>
-             <div className="flex items-center space-x-1 shrink-0">
+            </Link>
+            <div className="flex items-center space-x-1 shrink-0">
               <button
                 onClick={() => setIsChangePasswordOpen(true)}
                 className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-850 transition duration-150"

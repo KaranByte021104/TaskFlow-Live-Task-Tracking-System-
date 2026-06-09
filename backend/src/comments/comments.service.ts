@@ -144,6 +144,17 @@ export class CommentsService {
             avatarUrl: true,
           },
         },
+        reactions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        },
       },
       orderBy: {
         createdAt: 'asc',
@@ -263,5 +274,125 @@ export class CommentsService {
     );
 
     return { success: true };
+  }
+
+  async toggleReaction(userId: string, commentId: string, emoji: string) {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      include: {
+        task: {
+          select: { projectId: true },
+        },
+      },
+    });
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    await this.checkProjectMembership(comment.task.projectId, userId);
+
+    const existing = await this.prisma.commentReaction.findUnique({
+      where: {
+        commentId_userId_emoji: {
+          commentId,
+          userId,
+          emoji,
+        },
+      },
+    });
+
+    if (existing) {
+      await this.prisma.commentReaction.delete({
+        where: {
+          commentId_userId_emoji: {
+            commentId,
+            userId,
+            emoji,
+          },
+        },
+      });
+    } else {
+      await this.prisma.commentReaction.create({
+        data: {
+          commentId,
+          userId,
+          emoji,
+        },
+      });
+    }
+
+    const allReactions = await this.prisma.commentReaction.findMany({
+      where: { commentId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    this.realtimeGateway.sendToProjectRoom(
+      comment.task.projectId,
+      'comment:reaction_updated',
+      {
+        commentId,
+        reactions: allReactions,
+      },
+    );
+
+    return { success: true };
+  }
+
+  async listReactions(userId: string, commentId: string) {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      include: {
+        task: {
+          select: { projectId: true },
+        },
+      },
+    });
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    await this.checkProjectMembership(comment.task.projectId, userId);
+
+    const reactions = await this.prisma.commentReaction.findMany({
+      where: { commentId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    const groupedMap = new Map<string, { emoji: string; count: number; users: any[]; reactedByMe: boolean }>();
+
+    for (const r of reactions) {
+      if (!groupedMap.has(r.emoji)) {
+        groupedMap.set(r.emoji, {
+          emoji: r.emoji,
+          count: 0,
+          users: [],
+          reactedByMe: false,
+        });
+      }
+      const group = groupedMap.get(r.emoji)!;
+      group.count++;
+      group.users.push(r.user);
+      if (r.userId === userId) {
+        group.reactedByMe = true;
+      }
+    }
+
+    return Array.from(groupedMap.values());
   }
 }

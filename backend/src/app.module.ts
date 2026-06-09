@@ -9,6 +9,8 @@ import { TasksModule } from './tasks/tasks.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { CommentsModule } from './comments/comments.module';
 import { TaskImagesModule } from './task-images/task-images.module';
+import { LabelsModule } from './labels/labels.module';
+import { ProfileModule } from './profile/profile.module';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { TaskImagesModule } from './task-images/task-images.module';
     RealtimeModule,
     CommentsModule,
     TaskImagesModule,
+    LabelsModule,
+    ProfileModule,
   ],
   controllers: [AppController],
   providers: [],

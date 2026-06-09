@@ -16,11 +16,11 @@ import { GetUser } from '../auth/get-user.decorator';
 import { TaskStatus } from '@prisma/client';
 
 @UseGuards(JwtAuthGuard)
-@Controller('projects/:projectId/tasks')
+@Controller()
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
-  @Post()
+  @Post('projects/:projectId/tasks')
   async create(
     @Param('projectId') projectId: string,
     @GetUser('id') userId: string,
@@ -29,7 +29,7 @@ export class TasksController {
     return this.tasksService.create(projectId, userId, createDto);
   }
 
-  @Get()
+  @Get('projects/:projectId/tasks')
   async list(
     @Param('projectId') projectId: string,
     @GetUser('id') userId: string,
@@ -49,7 +49,7 @@ export class TasksController {
     });
   }
 
-  @Get(':taskId')
+  @Get('projects/:projectId/tasks/:taskId')
   async findOne(
     @Param('projectId') projectId: string,
     @Param('taskId') taskId: string,
@@ -58,7 +58,7 @@ export class TasksController {
     return this.tasksService.findOne(projectId, taskId, userId);
   }
 
-  @Patch(':taskId')
+  @Patch('projects/:projectId/tasks/:taskId')
   async update(
     @Param('projectId') projectId: string,
     @Param('taskId') taskId: string,
@@ -68,12 +68,46 @@ export class TasksController {
     return this.tasksService.update(projectId, taskId, userId, updateDto);
   }
 
-  @Delete(':taskId')
+  @Delete('projects/:projectId/tasks/:taskId')
   async remove(
     @Param('projectId') projectId: string,
     @Param('taskId') taskId: string,
     @GetUser('id') userId: string,
   ) {
     return this.tasksService.remove(projectId, taskId, userId);
+  }
+
+  @Get('tasks/:taskId/history')
+  async getHistory(
+    @Param('taskId') taskId: string,
+    @GetUser('id') userId: string,
+  ) {
+    return this.tasksService.getHistory(taskId, userId);
+  }
+
+  @Post('tasks/:taskId/dependencies')
+  async addDependency(
+    @Param('taskId') taskId: string,
+    @GetUser('id') userId: string,
+    @Body('blockedByTaskId') blockedByTaskId: string,
+  ) {
+    return this.tasksService.addDependency(userId, taskId, blockedByTaskId);
+  }
+
+  @Delete('tasks/:taskId/dependencies/:blockedByTaskId')
+  async removeDependency(
+    @Param('taskId') taskId: string,
+    @Param('blockedByTaskId') blockedByTaskId: string,
+    @GetUser('id') userId: string,
+  ) {
+    return this.tasksService.removeDependency(userId, taskId, blockedByTaskId);
+  }
+
+  @Get('tasks/:taskId/dependencies')
+  async getDependencies(
+    @Param('taskId') taskId: string,
+    @GetUser('id') userId: string,
+  ) {
+    return this.tasksService.getDependencies(userId, taskId);
   }
 }

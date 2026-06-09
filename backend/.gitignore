@@ -6,4 +6,5 @@ node_modules
 
 /uploads/*
 !/uploads/tasks/.gitkeep
+!/uploads/avatars/.gitkeep
 

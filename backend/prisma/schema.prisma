@@ -22,6 +22,7 @@ model User {
   memberships ProjectMember[]
   activities  Activity[]
   comments    Comment[]
+  reactions   CommentReaction[]
   tasks       Task[]          @relation("TaskAssignee")
   createdTasks Task[]         @relation("TaskCreator")
   uploadedImages TaskImage[]   @relation("ImageUploader")
@@ -41,6 +42,7 @@ model Project {
   members     ProjectMember[]
   tasks       Task[]
   activities  Activity[]
+  labels      Label[]
 
   @@map("projects")
 }
@@ -99,6 +101,9 @@ model Task {
   comments    Comment[]
   activities  Activity[]
   images      TaskImage[]
+  labels      TaskLabel[]
+  dependencies TaskDependency[] @relation("BlockedTask")
+  blocking     TaskDependency[] @relation("BlockingTask")
 
   @@map("tasks")
 }
@@ -139,6 +144,7 @@ model Comment {
 
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions CommentReaction[]
 
   @@map("comments")
 }
@@ -176,4 +182,56 @@ model OtpToken {
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("otp_tokens")
+}
+
+model CommentReaction {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId, emoji])
+  @@map("comment_reactions")
+}
+
+model Label {
+  id        String      @id @default(cuid())
+  name      String
+  color     String
+  projectId String
+  createdAt DateTime    @default(now())
+
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     TaskLabel[]
+
+  @@map("labels")
+}
+
+model TaskLabel {
+  id        String   @id @default(cuid())
+  taskId    String
+  labelId   String
+
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label     Label    @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, labelId])
+  @@map("task_labels")
+}
+
+model TaskDependency {
+  id              String   @id @default(cuid())
+  taskId          String
+  blockedByTaskId String
+  createdAt       DateTime @default(now())
+
+  task            Task     @relation("BlockedTask", fields: [taskId], references: [id], onDelete: Cascade)
+  blockedBy       Task     @relation("BlockingTask", fields: [blockedByTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, blockedByTaskId])
+  @@map("task_dependencies")
 }

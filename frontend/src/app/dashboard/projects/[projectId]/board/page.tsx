@@ -15,6 +15,7 @@ import ActivityFeedPanel from '../components/activity-feed-panel';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useToastStore } from '@/store/useToastStore';
 
 const COLUMNS: { status: TaskStatus; label: string; bg: string }[] = [
   { status: 'TODO', label: 'To Do', bg: 'bg-slate-100/60 dark:bg-slate-950/30' },
@@ -25,6 +26,7 @@ const COLUMNS: { status: TaskStatus; label: string; bg: string }[] = [
 
 export default function KanbanBoardPage({ params }: { params: { projectId: string } }) {
   const currentUser = useAuthStore((state) => state.user);
+  const { addToast } = useToastStore();
   const [showActivities, setShowActivities] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   
@@ -41,10 +43,11 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
     mutationFn: ({ taskId, status }: { taskId: string; status: TaskStatus }) =>
       updateTaskApi(params.projectId, taskId, { status }),
     onMutate: async ({ taskId, status }) => {
-      await queryClient.cancelQueries({ queryKey: ['tasks', params.projectId] });
-      const previousTasks = queryClient.getQueryData(['tasks', params.projectId]);
+      const queryKey = ['tasks', params.projectId, search, assigneeFilter];
+      await queryClient.cancelQueries({ queryKey });
+      const previousTasks = queryClient.getQueryData(queryKey);
 
-      queryClient.setQueriesData({ queryKey: ['tasks', params.projectId] }, (old: any) => {
+      queryClient.setQueryData(queryKey, (old: any) => {
         if (!old) return old;
         if (old.pages) {
           return {
@@ -62,14 +65,19 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
 
       return { previousTasks };
     },
-    onError: (err, variables, context) => {
+    onError: (err: any, variables, context) => {
+      const queryKey = ['tasks', params.projectId, search, assigneeFilter];
       if (context?.previousTasks) {
-        queryClient.setQueriesData({ queryKey: ['tasks', params.projectId] }, context.previousTasks);
+        queryClient.setQueryData(queryKey, context.previousTasks);
       }
+      const message = err.response?.data?.message || 'Failed to update task status.';
+      addToast(message, 'error');
     },
     onSuccess: (updatedTask) => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', params.projectId] });
-      queryClient.invalidateQueries({ queryKey: ['task', updatedTask.id] });
+      const queryKey = ['tasks', params.projectId, search, assigneeFilter];
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: ['task', params.projectId, updatedTask.id] });
+      queryClient.invalidateQueries({ queryKey: ['task-history', updatedTask.id] });
       queryClient.invalidateQueries({ queryKey: ['project-stats', params.projectId] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -382,6 +390,7 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
           onClose={() => setActiveTaskId(null)}
           projectId={params.projectId}
           taskId={activeTaskId}
+          onTaskClick={(id) => setActiveTaskId(id)}
         />
       )}
     </div>

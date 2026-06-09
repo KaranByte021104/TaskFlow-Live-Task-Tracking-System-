@@ -1,12 +1,12 @@
 # Database Schema Document
 
-This document describes the database schema, entity relationships, indexes, and role structures designed for the Task Tracker application.
+This document describes the database schema, entity relationships, indexes, cascades, and role-based permissions designed for the Task Tracker application.
 
 ---
 
 ## Entity-Relationship Diagram (ERD)
 
-The following Mermaid diagram shows the database tables and their foreign key relationships.
+The following Mermaid diagram shows all 12 database tables and their foreign key relationships.
 
 ```mermaid
 erDiagram
@@ -14,6 +14,7 @@ erDiagram
     users ||--o{ tasks : "assigned tasks"
     users ||--o{ tasks : "creates tasks"
     users ||--o{ comments : "writes comments"
+    users ||--o{ comment_reactions : "reacts to comments"
     users ||--o{ activities : "performs activities"
     users ||--o{ task_images : "uploads images"
     users ||--o{ otp_tokens : "has OTP tokens"
@@ -21,10 +22,18 @@ erDiagram
     projects ||--o{ project_members : "has members"
     projects ||--o{ tasks : "contains tasks"
     projects ||--o{ activities : "contains activities"
+    projects ||--o{ labels : "has labels"
 
     tasks ||--o{ comments : "has comments"
     tasks ||--o{ task_images : "attaches images"
     tasks ||--o{ activities : "references tasks"
+    tasks ||--o{ task_labels : "has task_labels"
+    tasks ||--o{ task_dependencies : "is blocked (taskId)"
+    tasks ||--o{ task_dependencies : "blocks other tasks (blockedByTaskId)"
+
+    comments ||--o{ comment_reactions : "has reactions"
+
+    labels ||--o{ task_labels : "referenced in"
 
     users {
         string id PK
@@ -89,6 +98,14 @@ erDiagram
         datetime updatedAt
     }
 
+    comment_reactions {
+        string id PK
+        string commentId FK
+        string userId FK
+        string emoji
+        datetime createdAt
+    }
+
     activities {
         string id PK
         string type "TASK_CREATED | STATUS_CHANGED | etc."
@@ -108,6 +125,27 @@ erDiagram
         datetime expiresAt
         datetime createdAt
     }
+
+    labels {
+        string id PK
+        string name
+        string color
+        string projectId FK
+        datetime createdAt
+    }
+
+    task_labels {
+        string id PK
+        string taskId FK
+        string labelId FK
+    }
+
+    task_dependencies {
+        string id PK
+        string taskId FK
+        string blockedByTaskId FK
+        datetime createdAt
+    }
 ```
 
 ---
@@ -123,7 +161,7 @@ Stores user profile credentials.
 | `email` | `String` | No | - | Unique login email. |
 | `password` | `String` | No | - | Hashed password string. |
 | `displayName`| `String` | No | - | User display name. |
-| `avatarUrl` | `String` | Yes | `null` | Optional URL pointing to a user profile avatar image. |
+| `avatarUrl` | `String` | Yes | `null` | Optional public URL pointing to a user profile avatar image. |
 | `createdAt` | `DateTime`| No | `now()` | Date and time of user account registration. |
 | `updatedAt` | `DateTime`| No | - | Auto-updated on record change. |
 
@@ -185,11 +223,11 @@ Tracks image attachments uploaded to tasks.
 | :--- | :--- | :---: | :--- | :--- |
 | `id` | `String` | No | `cuid()` | Primary Key. |
 | `taskId` | `String` | No | - | Foreign Key referencing `tasks(id)` (OnDelete: Cascade). |
-| `originalName`| `String` | No | - | Original filename submitted by the user. |
-| `storedName` | `String` | No | - | Random UUID filename stored on local disk. |
-| `url` | `String` | No | - | Public HTTP static file URL. |
+| `originalName`| `String` | No | - | Original filename submitted by the user (e.g. `mockup.png`). |
+| `storedName` | `String` | No | - | Random UUID filename stored on local disk to prevent collisions. |
+| `url` | `String` | No | - | Public HTTP static file URL (constructed dynamically using `BACKEND_URL` + file subpath). |
 | `size` | `Int` | No | - | File size in bytes. |
-| `mimeType` | `String` | No | - | Media type of the file (e.g. `image/png`). |
+| `mimeType` | `String` | No | - | Media type of the file (e.g. `image/png`, `image/jpeg`). |
 | `uploaderId` | `String` | No | - | Foreign Key referencing `users(id)` (OnDelete: Cascade). |
 | `createdAt` | `DateTime`| No | `now()` | Date and time of file upload. |
 
@@ -201,7 +239,7 @@ Stores textual comments left under tasks.
 | Column | Type | Nullable | Default | Description |
 | :--- | :--- | :---: | :--- | :--- |
 | `id` | `String` | No | `cuid()` | Primary Key. |
-| `text` | `String` | No | - | Comment markdown/plain text. |
+| `text` | `String` | No | - | Comment text. |
 | `taskId` | `String` | No | - | Foreign Key referencing `tasks(id)` (OnDelete: Cascade). |
 | `userId` | `String` | No | - | Foreign Key referencing `users(id)` (OnDelete: Cascade). |
 | `createdAt` | `DateTime`| No | `now()` | Comment submission timestamp. |
@@ -209,28 +247,43 @@ Stores textual comments left under tasks.
 
 ---
 
-### 7. `activities`
+### 7. `comment_reactions`
+Stores emoji reactions toggled on comments by users.
+
+| Column | Type | Nullable | Default | Description |
+| :--- | :--- | :---: | :--- | :--- |
+| `id` | `String` | No | `cuid()` | Primary Key. |
+| `commentId` | `String` | No | - | Foreign Key referencing `comments(id)` (OnDelete: Cascade). |
+| `userId` | `String` | No | - | Foreign Key referencing `users(id)` (OnDelete: Cascade). |
+| `emoji` | `String` | No | - | The emoji character string reacted by the user. |
+| `createdAt` | `DateTime`| No | `now()` | Timestamp when reaction was added. |
+
+*Unique Constraint*: Unique triple `[commentId, userId, emoji]` enforces that a user can react with a specific emoji only once per comment.
+
+---
+
+### 8. `activities`
 Audit log recording project actions.
 
 | Column | Type | Nullable | Default | Description |
 | :--- | :--- | :---: | :--- | :--- |
 | `id` | `String` | No | `cuid()` | Primary Key. |
-| `type` | `Enum` | No | - | Action type (`TASK_CREATED`, `STATUS_CHANGED`, etc.). |
+| `type` | `Enum` | No | - | Action type (`TASK_CREATED`, `TASK_UPDATED`, `STATUS_CHANGED`, `TASK_COMPLETED`, `COMMENT_ADDED`, `MEMBER_ADDED`, `MEMBER_REMOVED`). |
 | `projectId` | `String` | No | - | Foreign Key referencing `projects(id)` (OnDelete: Cascade). |
 | `userId` | `String` | No | - | Foreign Key referencing `users(id)` (OnDelete: Cascade). |
 | `taskId` | `String` | Yes | `null` | Optional Foreign Key referencing `tasks(id)` (OnDelete: SetNull). |
-| `metadata` | `Json` | Yes | `null` | Structured payload context (e.g., changes, file counts). |
+| `metadata` | `Json` | Yes | `null` | Structured payload context (e.g., old/new statuses, edited field differences, file upload totals). |
 | `createdAt` | `DateTime`| No | `now()` | Event record timestamp. |
 
 ---
 
-### 8. `otp_tokens`
+### 9. `otp_tokens`
 Stores short-lived 6-digit OTP codes and their verification status for operations like password resets.
 
 | Column | Type | Nullable | Default | Description |
 | :--- | :--- | :---: | :--- | :--- |
 | `id` | `String` | No | `cuid()` | Primary Key. |
-| `code` | `String` | No | - | The cryptographically secure 6-digit verification code. |
+| `code` | `String` | No | - | The secure 6-digit verification code. |
 | `userId` | `String` | No | - | Foreign Key referencing `users(id)` (OnDelete: Cascade). |
 | `purpose` | `Enum` | No | `PASSWORD_RESET` | Purpose of the OTP code (enum `PASSWORD_RESET`). |
 | `used` | `Boolean` | No | `false` | Status tracking if the code has been successfully verified/used. |
@@ -239,15 +292,55 @@ Stores short-lived 6-digit OTP codes and their verification status for operation
 
 ---
 
+### 10. `labels`
+Stores custom labels defined within projects.
+
+| Column | Type | Nullable | Default | Description |
+| :--- | :--- | :---: | :--- | :--- |
+| `id` | `String` | No | `cuid()` | Primary Key. |
+| `name` | `String` | No | - | The user-defined title of the label tag. |
+| `color` | `String` | No | - | The hex color code representing the label background. |
+| `projectId` | `String` | No | - | Foreign Key referencing `projects(id)` (OnDelete: Cascade) showing the project scope. |
+| `createdAt` | `DateTime`| No | `now()` | Date and time of label creation. |
+
+---
+
+### 11. `task_labels`
+Junction table mapping labels to specific tasks.
+
+| Column | Type | Nullable | Default | Description |
+| :--- | :--- | :---: | :--- | :--- |
+| `id` | `String` | No | `cuid()` | Primary Key. |
+| `taskId` | `String` | No | - | Foreign Key referencing `tasks(id)` (OnDelete: Cascade). |
+| `labelId` | `String` | No | - | Foreign Key referencing `labels(id)` (OnDelete: Cascade). |
+
+*Unique Constraint*: Unique pair `[taskId, labelId]` enforces that a label cannot be linked to the same task multiple times.
+
+---
+
+### 12. `task_dependencies`
+Junction table tracking blocking relationships between tasks.
+
+| Column | Type | Nullable | Default | Description |
+| :--- | :--- | :---: | :--- | :--- |
+| `id` | `String` | No | `cuid()` | Primary Key. |
+| `taskId` | `String` | No | - | Foreign Key referencing `tasks(id)` (OnDelete: Cascade) indicating the blocked task. |
+| `blockedByTaskId`| `String` | No | - | Foreign Key referencing `tasks(id)` (OnDelete: Cascade) indicating the blocking task. |
+| `createdAt` | `DateTime`| No | `now()` | Timestamp when the dependency was set. |
+
+*Unique Constraint*: Unique pair `[taskId, blockedByTaskId]` prevents registering duplicate dependency records.
+*Circular Dependency Checks*: Enforced programmatically inside the `TasksService`. Prior to creating a dependency, the service runs a DFS traversal. If a path exists where the `blockedByTaskId` depends on `taskId`, the operation is aborted to prevent circular blockages.
+
+---
+
 ## Relationships & Cascades
 
-### Task Image Cascades
-- **Database Relationship**: Each `TaskImage` record belongs to exactly one `Task`. A single `Task` can have many associated `TaskImages` (up to 10 per request).
-- **Cascade Behavior**: The relation is set with `onDelete: Cascade`. When a `Task` is deleted, its related `TaskImage` records are automatically removed from the database by the database engine. In addition, the application service (`TaskImagesService`) intercepts task deletion or deletes individual images, ensuring files on the physical disk are also deleted via Node's filesystem APIs (`unlink`), preventing orphaned disk files.
-
-### OTP Token Cascades
-- **Database Relationship**: Each `OtpToken` record belongs to exactly one `User`.
-- **Cascade Behavior**: The relation is configured with `onDelete: Cascade`. If a `User` record is permanently deleted, all their associated `OtpToken` records are cascade-deleted by the database automatically.
+When main entities are deleted, the database automatically manages referencing records via cascades:
+- **Project Deletion**: Cascade-deletes `project_members`, `tasks` (which in turn cascade-deletes related comments, images, labels, dependencies), `activities`, and project `labels`.
+- **Task Deletion**: Cascade-deletes `comments`, `task_images` (files are also deleted on physical disk via `unlink` inside `TaskImagesService`), `task_labels` links, and `task_dependencies` (both directions - where it blocks or is blocked). It leaves `Activity` records intact with `taskId` set to `null` (`onDelete: SetNull`).
+- **User Deletion**: Cascade-deletes project membership records, comment reactions, OTP tokens, comments, task images uploaded, and tasks created. Tasks assigned to the user are preserved with `assigneeId` set to `null` (`onDelete: SetNull`).
+- **Comment Deletion**: Cascade-deletes all emoji `comment_reactions` added to that comment.
+- **Label Deletion**: Cascade-deletes junction records in `task_labels` but keeps the actual tasks intact.
 
 ---
 
@@ -266,8 +359,11 @@ To maintain sub-millisecond query response times at scale, database indexes are 
 
 1. **`users(email)`**: An implicit unique index. Enables high-speed user searches during authentication queries (`login`/`register`).
 2. **`project_members(userId, projectId)`**: Unique compound index. Accelerates permission guards that fetch user roles in a project.
-3. **`tasks(projectId)`**: Implicit relation index. Speeds up queries loading Kanban columns for a project.
-4. **`task_images(taskId)`**: Custom indexing on foreign key. Since the most common query on the attachments table is "get all images associated with a task" when loading the details modal, an index on `taskId` guarantees O(1) query lookups.
+3. **`tasks(projectId)`**: Speeds up queries loading Kanban columns for a project.
+4. **`task_images(taskId)`**: Custom indexing on foreign key. Since the most common query on the attachments table is "get all images associated with a task" when loading the details modal, an index on `taskId` guarantees fast lookup.
 5. **`comments(taskId)`**: Relation index. Optimizes comment listing queries on task modal open.
-6. **`activities(projectId)`**: Relation index. Speeds up project dashboard activity feeds (loaded on the dashboard view).
-7. **`otp_tokens(userId)`**: Index on the foreign key relation. Speeds up verification lookup queries matching user ID, purpose, and active code status.
+6. **`comment_reactions(commentId)`**: Relation index. Optimizes reaction retrieval when comments are listed.
+7. **`labels(projectId)`**: Relation index. Speeds up loading project labels.
+8. **`task_dependencies(taskId, blockedByTaskId)`**: Compound unique index. Optimizes blocker lookups when checking dependencies during task updates.
+9. **`activities(projectId)`**: Relation index. Speeds up project dashboard activity feeds (loaded on the dashboard view).
+10. **`otp_tokens(userId)`**: Index on the foreign key relation. Speeds up verification lookup queries matching user ID, purpose, and active code status.

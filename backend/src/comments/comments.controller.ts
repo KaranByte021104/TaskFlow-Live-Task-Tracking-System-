@@ -47,4 +47,21 @@ export class CommentsController {
   ) {
     return this.commentsService.delete(userId, commentId);
   }
+
+  @Post('comments/:commentId/reactions')
+  async toggleReaction(
+    @Param('commentId') commentId: string,
+    @GetUser('id') userId: string,
+    @Body('emoji') emoji: string,
+  ) {
+    return this.commentsService.toggleReaction(userId, commentId, emoji);
+  }
+
+  @Get('comments/:commentId/reactions')
+  async listReactions(
+    @Param('commentId') commentId: string,
+    @GetUser('id') userId: string,
+  ) {
+    return this.commentsService.listReactions(userId, commentId);
+  }
 }

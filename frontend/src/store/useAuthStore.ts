@@ -6,6 +6,7 @@ interface AuthState {
   token: string | null;
   isLoading: boolean;
   setAuth: (user: User, token: string) => void;
+  setUser: (user: User) => void;
   logout: () => void;
   initialize: () => Promise<void>;
 }
@@ -20,6 +21,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     // Write cookie for middleware access (7 days)
     document.cookie = `token=${token}; path=/; max-age=604800; SameSite=Lax;`;
     set({ user, token, isLoading: false });
+  },
+
+  setUser: (user) => {
+    set({ user });
   },
 
   logout: () => {

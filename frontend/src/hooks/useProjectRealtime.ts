@@ -6,7 +6,7 @@ import { useSocket } from './useSocket';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useToastStore } from '@/store/useToastStore';
 import { useNotificationStore } from '@/store/useNotificationStore';
-import { Task, Activity, TaskImage } from '@/lib/tasks-api';
+import { Task, Activity, TaskImage, Comment } from '@/lib/tasks-api';
 
 export interface PresenceUser {
   id: string;
@@ -92,7 +92,8 @@ export function useProjectRealtime(projectId: string | null) {
         return old;
       });
 
-      queryClient.setQueryData(['task', data.task.id], data.task);
+      queryClient.setQueryData(['task', projectId, data.task.id], data.task);
+      queryClient.invalidateQueries({ queryKey: ['task-history', data.task.id] });
       queryClient.invalidateQueries({ queryKey: ['comments', data.task.id] });
       queryClient.invalidateQueries({ queryKey: ['project-stats', projectId] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
@@ -201,6 +202,21 @@ export function useProjectRealtime(projectId: string | null) {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     };
 
+    const handleCommentReactionUpdated = (data: { commentId: string; reactions: any[] }) => {
+      queryClient.setQueriesData({ queryKey: ['comments'] }, (old: any) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return old.map((c: Comment) => {
+            if (c.id === data.commentId) {
+              return { ...c, reactions: data.reactions };
+            }
+            return c;
+          });
+        }
+        return old;
+      });
+    };
+
     socket.on('presence:update', handlePresence);
     socket.on('task:created', handleTaskCreated);
     socket.on('task:updated', handleTaskUpdated);
@@ -210,6 +226,7 @@ export function useProjectRealtime(projectId: string | null) {
     socket.on('project:updated', handleProjectUpdated);
     socket.on('project:removed', handleProjectRemoved);
     socket.on('task:images_updated', handleTaskImagesUpdated);
+    socket.on('comment:reaction_updated', handleCommentReactionUpdated);
 
     return () => {
       socket.off('connect', joinRoom);
@@ -222,6 +239,7 @@ export function useProjectRealtime(projectId: string | null) {
       socket.off('project:updated', handleProjectUpdated);
       socket.off('project:removed', handleProjectRemoved);
       socket.off('task:images_updated', handleTaskImagesUpdated);
+      socket.off('comment:reaction_updated', handleCommentReactionUpdated);
 
       if (socket.connected && projectId) {
         socket.emit('leaveProject', projectId);

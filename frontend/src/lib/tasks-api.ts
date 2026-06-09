@@ -19,6 +19,8 @@ export interface Task {
   updatedAt: string;
   assignee?: User | null;
   creator?: User;
+  labels?: TaskLabel[];
+  dependencies?: any[];
   _count?: {
     comments: number;
     images?: number;
@@ -107,6 +109,19 @@ export async function getActivitiesApi(projectId: string): Promise<Activity[]> {
   return response.data;
 }
 
+export interface CommentReaction {
+  id: string;
+  commentId: string;
+  userId: string;
+  emoji: string;
+  createdAt: string;
+  user: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+}
+
 export interface Comment {
   id: string;
   text: string;
@@ -119,6 +134,27 @@ export interface Comment {
     displayName: string;
     avatarUrl: string | null;
   };
+  reactions?: CommentReaction[];
+}
+
+export interface GroupedReaction {
+  emoji: string;
+  count: number;
+  users: {
+    id: string;
+    displayName: string;
+    avatarUrl: string | null;
+  }[];
+  reactedByMe: boolean;
+}
+
+export async function toggleCommentReactionApi(commentId: string, emoji: string): Promise<void> {
+  await api.post(`/comments/${commentId}/reactions`, { emoji });
+}
+
+export async function getCommentReactionsApi(commentId: string): Promise<GroupedReaction[]> {
+  const response = await api.get<GroupedReaction[]>(`/comments/${commentId}/reactions`);
+  return response.data;
 }
 
 export async function createCommentApi(taskId: string, text: string): Promise<Comment> {
@@ -175,3 +211,81 @@ export async function getTaskImagesApi(taskId: string): Promise<TaskImage[]> {
 export async function deleteTaskImageApi(imageId: string): Promise<void> {
   await api.delete(`/images/${imageId}`);
 }
+
+export async function getTaskHistoryApi(taskId: string): Promise<Activity[]> {
+  const response = await api.get<Activity[]>(`/tasks/${taskId}/history`);
+  return response.data;
+}
+
+export interface Label {
+  id: string;
+  name: string;
+  color: string;
+  projectId: string;
+  createdAt: string;
+}
+
+export interface TaskLabel {
+  id: string;
+  taskId: string;
+  labelId: string;
+  label: Label;
+}
+
+export async function getProjectLabelsApi(projectId: string): Promise<Label[]> {
+  const response = await api.get<Label[]>(`/projects/${projectId}/labels`);
+  return response.data;
+}
+
+export async function createProjectLabelApi(
+  projectId: string,
+  data: { name: string; color: string }
+): Promise<Label> {
+  const response = await api.post<Label>(`/projects/${projectId}/labels`, data);
+  return response.data;
+}
+
+export async function updateLabelApi(
+  labelId: string,
+  data: { name?: string; color?: string }
+): Promise<Label> {
+  const response = await api.patch<Label>(`/labels/${labelId}`, data);
+  return response.data;
+}
+
+export async function deleteLabelApi(labelId: string): Promise<void> {
+  await api.delete(`/labels/${labelId}`);
+}
+
+export async function addLabelToTaskApi(taskId: string, labelId: string): Promise<Task> {
+  const response = await api.post<Task>(`/tasks/${taskId}/labels`, { labelId });
+  return response.data;
+}
+
+export async function removeLabelFromTaskApi(taskId: string, labelId: string): Promise<Task> {
+  const response = await api.delete<Task>(`/tasks/${taskId}/labels/${labelId}`);
+  return response.data;
+}
+
+export interface TaskDependencyLists {
+  blockedBy: any[];
+  blocking: any[];
+}
+
+export async function getTaskDependenciesApi(taskId: string): Promise<TaskDependencyLists> {
+  const response = await api.get<TaskDependencyLists>(`/tasks/${taskId}/dependencies`);
+  return response.data;
+}
+
+export async function addDependencyApi(taskId: string, blockedByTaskId: string): Promise<Task> {
+  const response = await api.post<Task>(`/tasks/${taskId}/dependencies`, { blockedByTaskId });
+  return response.data;
+}
+
+export async function removeDependencyApi(taskId: string, blockedByTaskId: string): Promise<Task> {
+  const response = await api.delete<Task>(`/tasks/${taskId}/dependencies/${blockedByTaskId}`);
+  return response.data;
+}
+
+
+

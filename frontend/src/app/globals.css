@@ -53,3 +53,8 @@ select:-webkit-autofill:focus {
   -webkit-box-shadow: 0 0 0px 1000px #020617 inset !important; /* Dark mode bg (slate-950) */
   -webkit-text-fill-color: #f8fafc !important; /* Dark mode text (slate-50) */
 }
+
+/* Invert calendar picker indicator icon in dark mode for visibility */
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
