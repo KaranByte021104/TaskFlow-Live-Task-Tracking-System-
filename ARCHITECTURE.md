@@ -152,6 +152,16 @@ To back up or review project data:
 
 ---
 
+### 6. Board Date Filter Flow
+To filter tasks and clean up the board:
+1. **Selection**: The user selects a date filter preset (Today, This Week, This Month, Custom Range) or switches the Date Field selector between "Created Date" and "Due Date" on the frontend board.
+2. **Client-Side Filtration**: The Next.js client intercepts the action and filters the already-loaded React Query tasks cache in-memory using local date utilities in the browser's local timezone.
+3. **No Network Requests**: No REST API calls or backend database queries are made. The transition is instantaneous, and the columns update to render only the matching subset of tasks.
+4. **Header and Empty States**: The column headers dynamically display secondary visible/hidden task counts (e.g., `3 visible · 8 hidden`), and empty columns render a "No tasks match this filter" message.
+5. **Real-time Event Integration**: When real-time socket events (`task:created`, `task:updated`) update the React Query cache, the client automatically re-filters the updated cache, keeping the visible columns and hidden counts synchronized with the active date filter rules.
+
+---
+
 ## Static File Serving Approach
 
 - **Asset Storage Directories**:

@@ -578,6 +578,9 @@ Lists tasks. Supports cursor-based infinite pagination, status/assignee filterin
   - `cursor` (string, optional)
   - `limit` (string/number, optional, default: 50)
 
+> [!NOTE]
+> Board date filtering (Today, This Week, This Month, Custom Range, and 7-day auto-hide) is handled entirely on the frontend and does not require any additional API query parameters — this task list endpoint returns all tasks for the project and the client filters them locally in memory.
+
 ---
 
 ### 3. Get Task Details

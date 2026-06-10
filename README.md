@@ -133,6 +133,8 @@ Follow these numbered steps to clone and run the application locally.
 - **Change Password**: Allows logged-in users to update their password from the sidebar, automatically logging them out and triggering a success notification on redirect.
 - **Show/Hide Password Toggle**: Independent visibility toggle button (eye/eye-off icons) integrated into every password input field.
 - **CSV and PDF Export**: Export comprehensive project snapshots (tasks, comments, activity log) into high-fidelity PDF layouts (with cover pages) and CSV tables.
+- **Board Date Filters**: Client-side filtering by "Created Date" or "Due Date" using preset ranges ("Today", "This Week", "This Month") or a "Custom Range" picker.
+- **Auto-Hide Old Tasks**: Cleans up the board by hiding tasks older than 7 days from all columns by default.
 
 ---
 
@@ -158,6 +160,8 @@ Follow these numbered steps to clone and run the application locally.
 | **Update Own Profile** | Yes | Yes | Yes |
 | **Export Project Data (CSV/PDF)**| Yes | Yes | Yes |
 
+*Note: Board date filters and auto-hide are display-only features and are available to all roles equally.*
+
 ---
 
 ## Known Limitations
@@ -168,3 +172,4 @@ Follow these numbered steps to clone and run the application locally.
 - **No Rate Limiting**: The API endpoints are not rate-limited.
 - **No File Content Scan**: Uploaded image attachments undergo extension and MIME verification but are not scanned for malicious scripts or malware.
 - **Server-Side PDF Generation**: PDF documents are fully compiled in-memory on the backend using `pdfmake`, which may cause resource usage spikes for very large project exports with hundreds of tasks.
+- **Frontend-Only Date Filters**: Date filtering and auto-hiding are handled entirely in memory on the client side. For very large projects with thousands of tasks, switching filters may result in a slight rendering delay.

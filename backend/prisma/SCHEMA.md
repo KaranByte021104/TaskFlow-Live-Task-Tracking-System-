@@ -366,4 +366,10 @@ To maintain sub-millisecond query response times at scale, database indexes are 
 7. **`labels(projectId)`**: Relation index. Speeds up loading project labels.
 8. **`task_dependencies(taskId, blockedByTaskId)`**: Compound unique index. Optimizes blocker lookups when checking dependencies during task updates.
 9. **`activities(projectId)`**: Relation index. Speeds up project dashboard activity feeds (loaded on the dashboard view).
-10. **`otp_tokens(userId)`**: Index on the foreign key relation. Speeds up verification lookup queries matching user ID, purpose, and active code status.
+10: **`otp_tokens(userId)`**: Index on the foreign key relation. Speeds up verification lookup queries matching user ID, purpose, and active code status.
+
+---
+
+## Sprint 13 Board Date Filters Note
+
+The Board Date Filters and Auto-Hide Old Tasks features (introduced in Sprint 13) are implemented entirely as frontend display-layer operations. They filter the cached tasks data locally in memory on the client browser. As a result, no new database tables, fields, indexes, or relationships were created, and the database schema remains unchanged.
