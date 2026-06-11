@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Menu, Bell, Sun, Moon } from 'lucide-react';
+import Link from 'next/link';
+import { Menu, Bell, Sun, Moon, ArrowLeft } from 'lucide-react';
 import { useThemeStore } from '../../store/useThemeStore';
 import { getProjectApi } from '../../lib/projects-api';
 import Avatar from '../ui/avatar';
@@ -76,6 +77,15 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
         >
           <Menu className="w-5 h-5" />
         </button>
+        {projectId && (
+          <Link
+            href={pathname === `/dashboard/projects/${projectId}` ? '/dashboard' : `/dashboard/projects/${projectId}`}
+            className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition duration-150 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center"
+            title={pathname === `/dashboard/projects/${projectId}` ? 'Back to Projects' : 'Back to Project Dashboard'}
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+        )}
         <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 tracking-tight">{getPageTitle()}</h2>
       </div>
 
