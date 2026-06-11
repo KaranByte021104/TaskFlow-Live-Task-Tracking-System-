@@ -369,7 +369,7 @@ export class TasksService {
     }
 
     // Check task blockers if moving to IN_PROGRESS
-    if (data.status === TaskStatus.IN_PROGRESS && originalTask.status !== TaskStatus.IN_PROGRESS) {
+    if (data.status && data.status !== TaskStatus.TODO && data.status !== originalTask.status) {
       const blockers = await this.prisma.taskDependency.findMany({
         where: { taskId },
         include: {

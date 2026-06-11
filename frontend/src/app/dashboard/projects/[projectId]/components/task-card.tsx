@@ -39,7 +39,7 @@ export default function TaskCard({ task, onClick, isReadOnly = false }: TaskCard
   return (
     <div
       onClick={onClick}
-      draggable={!isReadOnly}
+      draggable={!isReadOnly && unresolvedBlockers.length === 0}
       onDragStart={(e) => {
         if (isReadOnly) {
           e.preventDefault();
