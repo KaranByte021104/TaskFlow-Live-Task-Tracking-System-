@@ -24,6 +24,8 @@ export function useProjectRealtime(projectId: string | null) {
   useEffect(() => {
     if (!socket) return;
 
+    let hasBeenDisconnected = false;
+
     const joinRoom = () => {
       if (projectId) {
         socket.emit('joinProject', projectId);
@@ -35,12 +37,23 @@ export function useProjectRealtime(projectId: string | null) {
       joinRoom();
     }
 
-    // Handle auto-rejoin when connection goes down and comes back up
-    socket.on('connect', joinRoom);
+    const handleConnect = () => {
+      if (hasBeenDisconnected) {
+        addToast('Connection restored. You are back online!', 'success');
+        hasBeenDisconnected = false;
+      }
+    };
 
     // Handle presence updates
     const handlePresence = (users: PresenceUser[]) => {
       queryClient.setQueryData(['presence', projectId], users);
+    };
+
+    // Clear presence list on socket disconnection (server shutdown)
+    const handleDisconnect = () => {
+      queryClient.setQueryData(['presence', projectId], []);
+      addToast('You are offline. Trying to reconnect...', 'error');
+      hasBeenDisconnected = true;
     };
 
     // Handle task:created event
@@ -217,7 +230,10 @@ export function useProjectRealtime(projectId: string | null) {
       });
     };
 
+    socket.on('connect', handleConnect);
+    socket.on('authenticated', joinRoom);
     socket.on('presence:update', handlePresence);
+    socket.on('disconnect', handleDisconnect);
     socket.on('task:created', handleTaskCreated);
     socket.on('task:updated', handleTaskUpdated);
     socket.on('task:deleted', handleTaskDeleted);
@@ -229,8 +245,10 @@ export function useProjectRealtime(projectId: string | null) {
     socket.on('comment:reaction_updated', handleCommentReactionUpdated);
 
     return () => {
-      socket.off('connect', joinRoom);
+      socket.off('connect', handleConnect);
+      socket.off('authenticated', joinRoom);
       socket.off('presence:update', handlePresence);
+      socket.off('disconnect', handleDisconnect);
       socket.off('task:created', handleTaskCreated);
       socket.off('task:updated', handleTaskUpdated);
       socket.off('task:deleted', handleTaskDeleted);

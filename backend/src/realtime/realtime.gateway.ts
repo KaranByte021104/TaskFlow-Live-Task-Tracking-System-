@@ -73,6 +73,7 @@ export class RealtimeGateway
 
       client.user = user;
       client.join(`user:${user.id}`);
+      client.emit('authenticated');
       console.log(
         `Socket authenticated: User ${user.displayName} connected (${client.id})`,
       );
