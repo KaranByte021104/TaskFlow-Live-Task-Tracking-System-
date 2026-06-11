@@ -395,6 +395,59 @@ Generates and downloads a high-fidelity PDF document containing a Cover page, Ta
 
 ---
 
+### 9. Get Dashboard Statistics
+Retrieves overall summary statistics (counts of projects, tasks, assigned tasks, and overdue tasks) across all projects that the authenticated user belongs to.
+- **HTTP Method**: `GET`
+- **Path**: `/api/projects/dashboard/stats`
+- **Authentication**: Required (JWT)
+
+#### Example Response (`200 OK`)
+```json
+{
+  "totalProjects": 3,
+  "totalTasks": 15,
+  "assignedTasks": 5,
+  "overdueTasks": 1
+}
+```
+
+---
+
+### 10. Get User Assigned Tasks
+Retrieves all tasks assigned to the authenticated user across all projects they have membership in.
+- **HTTP Method**: `GET`
+- **Path**: `/api/projects/tasks/assigned`
+- **Authentication**: Required (JWT)
+
+#### Example Response (`200 OK`)
+```json
+[
+  {
+    "id": "cuid-task-001",
+    "title": "Write API documentation",
+    "description": "Complete Markdown file for the API routes",
+    "status": "TODO",
+    "priority": "HIGH",
+    "projectId": "cuid-proj-apollo",
+    "assigneeId": "cuid-user-123",
+    "creatorId": "cuid-user-456",
+    "dueDate": "2026-06-08T17:00:00.000Z",
+    "order": 0,
+    "createdAt": "2026-06-05T10:06:06.000Z",
+    "updatedAt": "2026-06-05T10:06:06.000Z",
+    "project": {
+      "name": "Apollo Project",
+      "color": "#10b981"
+    },
+    "_count": {
+      "comments": 2
+    }
+  }
+]
+```
+
+---
+
 ## Project Members Endpoints
 
 ### 1. Add / Invite Member
@@ -761,6 +814,32 @@ Toggles an emoji reaction on a comment. If the user has already reacted with the
     "userId": "cuid-user-123",
     "emoji": "👍",
     "createdAt": "2026-06-05T10:06:06.000Z"
+  }
+]
+```
+
+---
+
+### 6. List Comment Reactions
+Retrieves emoji reactions left on a comment, grouped by emoji character and listing the user details.
+- **HTTP Method**: `GET`
+- **Path**: `/api/comments/:commentId/reactions`
+- **Authentication**: Required (JWT. User must be a member)
+
+#### Example Response (`200 OK`)
+```json
+[
+  {
+    "emoji": "👍",
+    "count": 1,
+    "users": [
+      {
+        "id": "cuid-user-123",
+        "displayName": "Jane Doe",
+        "avatarUrl": null
+      }
+    ],
+    "reactedByMe": true
   }
 ]
 ```
