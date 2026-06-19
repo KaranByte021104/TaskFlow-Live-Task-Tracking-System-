@@ -8,9 +8,9 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { MailService } from './mail.service';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { EmailQueueService } from '../queues/email-queue.service';
 
 @Injectable()
 export class AuthService {
@@ -18,25 +18,44 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
-    private readonly mailService: MailService,
     private readonly configService: ConfigService,
+    private readonly emailQueueService: EmailQueueService,
   ) {}
+
+  private async createRefreshToken(userId: string, family?: string): Promise<string> {
+    const rawToken = crypto.randomBytes(40).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const tokenFamily = family || crypto.randomUUID();
+
+    await this.prisma.refreshToken.create({
+      data: {
+        tokenHash,
+        userId,
+        family: tokenFamily,
+        expiresAt,
+      },
+    });
+
+    return rawToken;
+  }
 
   async register(
     name: string,
     email: string,
     passwordStr: string,
-  ): Promise<{ user: Omit<User, 'password'>; accessToken: string }> {
+  ): Promise<{ user: Omit<User, 'password'>; accessToken: string; refreshToken: string }> {
     const user = await this.usersService.create({ name, email, passwordStr });
     const payload = { sub: user.id, email: user.email };
-    const accessToken = this.jwtService.sign(payload);
-    return { user, accessToken };
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+    const refreshToken = await this.createRefreshToken(user.id);
+    return { user, accessToken, refreshToken };
   }
 
   async login(
     email: string,
     passwordStr: string,
-  ): Promise<{ user: Omit<User, 'password'>; accessToken: string }> {
+  ): Promise<{ user: Omit<User, 'password'>; accessToken: string; refreshToken: string }> {
     const user = await this.usersService.findByEmail(email);
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
@@ -50,9 +69,73 @@ export class AuthService {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...result } = user;
     const payload = { sub: result.id, email: result.email };
-    const accessToken = this.jwtService.sign(payload);
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+    const refreshToken = await this.createRefreshToken(result.id);
 
-    return { user: result, accessToken };
+    return { user: result, accessToken, refreshToken };
+  }
+
+  async refreshTokens(
+    refreshToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const foundToken = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+    });
+
+    if (!foundToken) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (foundToken.revoked) {
+      // Reuse detection: revoke the entire family!
+      await this.prisma.refreshToken.updateMany({
+        where: { family: foundToken.family },
+        data: { revoked: true },
+      });
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (foundToken.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh token has expired');
+    }
+
+    // Mark current token as revoked (rotated out)
+    await this.prisma.refreshToken.update({
+      where: { id: foundToken.id },
+      data: { revoked: true },
+    });
+
+    // Issue new dual tokens
+    const user = await this.prisma.user.findUnique({
+      where: { id: foundToken.userId },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User no longer exists');
+    }
+
+    const payload = { sub: user.id, email: user.email };
+    const newAccessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+    const newRefreshToken = await this.createRefreshToken(user.id, foundToken.family);
+
+    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+  }
+
+  async logout(refreshToken: string): Promise<{ success: boolean }> {
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const foundToken = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+    });
+
+    if (foundToken) {
+      // Revoke the entire family chain on logout
+      await this.prisma.refreshToken.updateMany({
+        where: { family: foundToken.family },
+        data: { revoked: true },
+      });
+    }
+
+    return { success: true };
   }
 
   async requestOtp(email: string): Promise<{ message: string }> {
@@ -81,7 +164,7 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     // Save token
-    await this.prisma.otpToken.create({
+    const otpToken = await this.prisma.otpToken.create({
       data: {
         code,
         userId: user.id,
@@ -90,8 +173,17 @@ export class AuthService {
       },
     });
 
-    // Send email
-    await this.mailService.sendOtpEmail(user.email, user.displayName, code);
+    // Send email using BullMQ background queue with deterministic jobId for idempotency
+    const jobId = `otp-email:${user.id}:${otpToken.id}`;
+    await this.emailQueueService.enqueueEmail(
+      'otp',
+      {
+        email: user.email,
+        name: user.displayName,
+        code,
+      },
+      jobId,
+    );
 
     return {
       message:

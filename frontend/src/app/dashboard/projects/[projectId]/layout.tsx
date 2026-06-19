@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { getProjectApi } from '@/lib/projects-api';
-import { LayoutDashboard, Kanban, Settings } from 'lucide-react';
+import { getProjectChannelApi } from '@/lib/chat-api';
+import { LayoutDashboard, Kanban, Settings, MessageSquare, FileText } from 'lucide-react';
 import Spinner from '@/components/ui/spinner';
 import { clsx } from 'clsx';
 
@@ -20,6 +21,12 @@ export default function ProjectLayout({
   const { data: project, isLoading, isError } = useQuery({
     queryKey: ['project', params.projectId],
     queryFn: () => getProjectApi(params.projectId),
+    enabled: !!params.projectId,
+  });
+
+  const { data: channel } = useQuery({
+    queryKey: ['project-channel', params.projectId],
+    queryFn: () => getProjectChannelApi(params.projectId),
     enabled: !!params.projectId,
   });
 
@@ -54,6 +61,28 @@ export default function ProjectLayout({
       icon: <Kanban className="w-4 h-4" />,
     },
     {
+      label: 'Chat',
+      href: `/dashboard/projects/${params.projectId}/chat`,
+      active: pathname === `/dashboard/projects/${params.projectId}/chat`,
+      icon: (
+        <div className="relative">
+          <MessageSquare className="w-4 h-4" />
+          {channel && channel.unreadCount !== undefined && channel.unreadCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      label: 'Files',
+      href: `/dashboard/projects/${params.projectId}/files`,
+      active: pathname === `/dashboard/projects/${params.projectId}/files`,
+      icon: <FileText className="w-4 h-4" />,
+    },
+    {
       label: 'Settings',
       href: `/dashboard/projects/${params.projectId}/settings`,
       active: pathname === `/dashboard/projects/${params.projectId}/settings`,
@@ -79,7 +108,7 @@ export default function ProjectLayout({
         </div>
 
         {/* Tab links */}
-        <div className="flex items-center gap-1 border-b sm:border-b-0 border-slate-200 dark:border-slate-850">
+        <div className="flex items-center gap-1 border-b sm:border-b-0 border-slate-200 dark:border-slate-800">
           {tabs.map((tab) => (
             <Link
               key={tab.label}

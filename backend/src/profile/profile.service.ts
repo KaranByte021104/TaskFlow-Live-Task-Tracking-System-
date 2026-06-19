@@ -30,7 +30,7 @@ export class ProfileService {
     return result;
   }
 
-  async updateProfile(userId: string, data: { name?: string; email?: string }) {
+  async updateProfile(userId: string, data: { name?: string; email?: string; notifyByEmail?: boolean }) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -52,6 +52,10 @@ export class ProfileService {
         throw new ConflictException('Email already in use');
       }
       updateData.email = data.email;
+    }
+
+    if (data.notifyByEmail !== undefined) {
+      updateData.notifyByEmail = data.notifyByEmail;
     }
 
     const updatedUser = await this.prisma.user.update({

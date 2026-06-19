@@ -4,9 +4,10 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { LayoutDashboard, CheckSquare, Plus, LogOut, Folder, X, Key } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, Plus, LogOut, Folder, X, Key, MessageSquare } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getProjectsApi } from '../../lib/projects-api';
+import { getConversationsApi } from '../../lib/chat-api';
 import Avatar from '../ui/avatar';
 import { clsx } from 'clsx';
 import ChangePasswordModal from '../change-password-modal';
@@ -30,6 +31,14 @@ export default function Sidebar({ isOpen, onClose, onNewProject }: SidebarProps)
     enabled: !!user,
   });
 
+  const { data: conversations = [] } = useQuery({
+    queryKey: ['conversations'],
+    queryFn: getConversationsApi,
+    enabled: !!user,
+  });
+
+  const totalUnread = conversations.reduce((sum, conv) => sum + (conv.unreadCount || 0), 0);
+
   const handleLogout = () => {
     logout();
     router.push('/login');
@@ -38,6 +47,12 @@ export default function Sidebar({ isOpen, onClose, onNewProject }: SidebarProps)
   const navLinks = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/dashboard/tasks', label: 'My Tasks', icon: CheckSquare },
+    {
+      href: '/dashboard/messages',
+      label: 'Messages',
+      icon: MessageSquare,
+      unreadCount: totalUnread,
+    },
   ];
 
   const sidebarContent = (
@@ -64,21 +79,28 @@ export default function Sidebar({ isOpen, onClose, onNewProject }: SidebarProps)
         <div className="space-y-1.5">
           {navLinks.map((link) => {
             const Icon = link.icon;
-            const isActive = pathname === link.href;
+            const isActive = pathname === link.href || (link.href === '/dashboard/messages' && pathname.startsWith('/dashboard/messages'));
             return (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={onClose}
                 className={clsx(
-                  'flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition duration-150',
+                  'flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold transition duration-150',
                   isActive
                     ? 'bg-slate-100 text-slate-950 dark:bg-slate-800 dark:text-white shadow-sm'
                     : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-905 dark:hover:text-white text-slate-600 dark:text-slate-400'
                 )}
               >
-                <Icon className="w-4 h-4" />
-                <span>{link.label}</span>
+                <div className="flex items-center space-x-3">
+                  <Icon className="w-4 h-4" />
+                  <span>{link.label}</span>
+                </div>
+                {link.unreadCount !== undefined && link.unreadCount > 0 && (
+                  <span className="bg-red-500 text-white font-bold text-[10px] px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                    {link.unreadCount}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -151,7 +173,7 @@ export default function Sidebar({ isOpen, onClose, onNewProject }: SidebarProps)
             <div className="flex items-center space-x-1 shrink-0">
               <button
                 onClick={() => setIsChangePasswordOpen(true)}
-                className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-850 transition duration-150"
+                className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition duration-150"
                 title="Change Password"
               >
                 <Key className="w-4 h-4" />

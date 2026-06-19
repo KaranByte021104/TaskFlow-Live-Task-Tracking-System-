@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Filter, Activity as ActivityIcon, X } from 'lucide-react';
 import { getProjectApi } from '../../../../../lib/projects-api';
@@ -29,6 +30,27 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
   const { addToast } = useToastStore();
   const [showActivities, setShowActivities] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const initialTaskId = searchParams.get('task');
+
+  useEffect(() => {
+    if (initialTaskId) {
+      setActiveTaskId(initialTaskId);
+    }
+  }, [initialTaskId]);
+
+  const handleCloseDetailPanel = () => {
+    setActiveTaskId(null);
+    if (initialTaskId) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('task');
+      const queryStr = params.toString();
+      router.replace(queryStr ? `${pathname}?${queryStr}` : pathname);
+    }
+  };
   
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createStatus, setCreateStatus] = useState<TaskStatus>('TODO');
@@ -170,7 +192,9 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
   });
 
   const userMembership = project?.members.find((m) => m.userId === currentUser?.id);
-  const isViewer = userMembership?.role === 'VIEWER';
+  const isAdmin = userMembership?.role === 'ADMIN';
+  const isManager = userMembership?.role === 'MANAGER';
+  const isMember = userMembership?.role === 'MEMBER';
 
   // Fetch tasks with search & assignee filters and cursor-based infinite pagination
   const {
@@ -201,7 +225,7 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
   // Setup keyboard shortcuts
   useKeyboardShortcuts({
     onPressN: () => {
-      if (!isViewer) openCreateModal('TODO');
+      if (userMembership) openCreateModal('TODO');
     },
     onPressSlash: () => {
       document.getElementById('tasks-search-input')?.focus();
@@ -324,7 +348,7 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
               </Button>
 
               {/* Create Task Button */}
-              {!isViewer && (
+              {userMembership && (
                 <Button
                   onClick={() => openCreateModal('TODO')}
                   className="flex items-center"
@@ -562,7 +586,7 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
                         {hiddenCount > 0 ? `${visibleTasks.length} visible · ${hiddenCount} hidden` : visibleTasks.length}
                       </span>
                     </div>
-                    {!isViewer && (
+                    {userMembership && (
                       <button
                         onClick={() => openCreateModal(col.status)}
                         className="text-slate-400 hover:text-slate-700 dark:text-slate-550 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 p-1 rounded-lg transition"
@@ -580,9 +604,15 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
-                      if (isViewer) return;
+                      if (!userMembership) return;
                       const taskId = e.dataTransfer.getData('text/plain');
                       if (taskId) {
+                        const droppedTask = tasks.find((t) => t.id === taskId);
+                        const isCardReadOnly = !isAdmin && !isManager && droppedTask?.creatorId !== currentUser?.id && droppedTask?.assigneeId !== currentUser?.id;
+                        if (isCardReadOnly) {
+                          addToast('Members can only move their own tasks', 'error');
+                          return;
+                        }
                         handleUpdateTaskStatus(taskId, col.status);
                       }
                     }}
@@ -596,14 +626,17 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
                     }}
                     className={clsx('flex-1 overflow-y-auto p-4 space-y-4 min-h-[150px]', col.bg)}
                   >
-                    {visibleTasks.map((task) => (
-                      <TaskCard
-                        key={task.id}
-                        task={task}
-                        isReadOnly={isViewer}
-                        onClick={() => setActiveTaskId(task.id)}
-                      />
-                    ))}
+                    {visibleTasks.map((task) => {
+                      const isCardReadOnly = !isAdmin && !isManager && task.creatorId !== currentUser?.id && task.assigneeId !== currentUser?.id;
+                      return (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          isReadOnly={isCardReadOnly}
+                          onClick={() => setActiveTaskId(task.id)}
+                        />
+                      );
+                    })}
 
                     {isFetchingNextPage && (
                       <div className="flex justify-center py-2 shrink-0">
@@ -651,7 +684,7 @@ export default function KanbanBoardPage({ params }: { params: { projectId: strin
       {activeTaskId && (
         <TaskDetailPanel
           isOpen={!!activeTaskId}
-          onClose={() => setActiveTaskId(null)}
+          onClose={handleCloseDetailPanel}
           projectId={params.projectId}
           taskId={activeTaskId}
           onTaskClick={(id) => setActiveTaskId(id)}

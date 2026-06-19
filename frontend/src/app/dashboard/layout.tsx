@@ -28,7 +28,7 @@ export default function DashboardLayout({
         <Topbar onMenuClick={() => setIsSidebarOpen(true)} />
 
         {/* Dynamic page content scroll wrapper */}
-        <main className="flex-grow pt-22 pb-12 px-6 overflow-y-auto">
+        <main className="flex-grow pt-24 pb-12 px-6 overflow-y-auto">
           <div className="max-w-7xl mx-auto w-full">
             {children}
           </div>

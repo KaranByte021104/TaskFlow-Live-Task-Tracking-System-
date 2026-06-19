@@ -9,11 +9,13 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { GetUser } from './get-user.decorator';
 import { User } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('register')
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(
@@ -23,9 +25,21 @@ export class AuthController {
     );
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto.email, loginDto.password);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('refresh')
+  async refresh(@Body('refreshToken') refreshToken: string) {
+    return this.authService.refreshTokens(refreshToken);
+  }
+
+  @Post('logout')
+  async logout(@Body('refreshToken') refreshToken: string) {
+    return this.authService.logout(refreshToken);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -34,6 +48,7 @@ export class AuthController {
     return user;
   }
 
+  @Throttle({ default: { limit: 3, ttl: 900000 } })
   @Post('request-otp')
   async requestOtp(@Body() requestOtpDto: RequestOtpDto) {
     return this.authService.requestOtp(requestOtpDto.email);

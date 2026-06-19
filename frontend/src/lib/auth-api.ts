@@ -5,6 +5,7 @@ export interface User {
   email: string;
   displayName: string;
   avatarUrl: string | null;
+  notifyByEmail?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -12,6 +13,21 @@ export interface User {
 export interface AuthResponse {
   user: User;
   accessToken: string;
+  refreshToken: string;
+}
+
+export async function refreshApi(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  const response = await api.post<{ accessToken: string; refreshToken: string }>('/auth/refresh', {
+    refreshToken,
+  });
+  return response.data;
+}
+
+export async function logoutApi(refreshToken: string): Promise<{ success: boolean }> {
+  const response = await api.post<{ success: boolean }>('/auth/logout', {
+    refreshToken,
+  });
+  return response.data;
 }
 
 export async function registerApi(name: string, email: string, passwordStr: string): Promise<AuthResponse> {

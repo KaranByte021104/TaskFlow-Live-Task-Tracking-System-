@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useToastStore } from '@/store/useToastStore';
 import { useNotificationStore } from '@/store/useNotificationStore';
 import { Task, Activity, TaskImage, Comment } from '@/lib/tasks-api';
+import { Notification } from '@/lib/notifications-api';
 
 export interface PresenceUser {
   id: string;
@@ -91,21 +92,32 @@ export function useProjectRealtime(projectId: string | null) {
 
     // Handle task:updated event
     const handleTaskUpdated = (data: { task: Task; userId: string; userDisplayName: string }) => {
+      const mergeTasks = (existing: Task, incoming: Task): Task => ({
+        ...existing,
+        ...incoming,
+        _count: existing._count && incoming._count
+          ? { ...existing._count, ...incoming._count }
+          : (incoming._count || existing._count),
+      });
+
       queryClient.setQueriesData({ queryKey: ['tasks', projectId] }, (old: any) => {
         if (!old) return old;
         if (old.pages) {
           return {
             ...old,
-            pages: old.pages.map((page: Task[]) => page.map((t) => (t.id === data.task.id ? data.task : t))),
+            pages: old.pages.map((page: Task[]) => page.map((t) => (t.id === data.task.id ? mergeTasks(t, data.task) : t))),
           };
         }
         if (Array.isArray(old)) {
-          return old.map((t: Task) => (t.id === data.task.id ? data.task : t));
+          return old.map((t: Task) => (t.id === data.task.id ? mergeTasks(t, data.task) : t));
         }
         return old;
       });
 
-      queryClient.setQueryData(['task', projectId, data.task.id], data.task);
+      queryClient.setQueryData(['task', projectId, data.task.id], (old: any) => {
+        if (!old) return data.task;
+        return mergeTasks(old, data.task);
+      });
       queryClient.invalidateQueries({ queryKey: ['task-history', data.task.id] });
       queryClient.invalidateQueries({ queryKey: ['comments', data.task.id] });
       queryClient.invalidateQueries({ queryKey: ['project-stats', projectId] });
@@ -230,6 +242,25 @@ export function useProjectRealtime(projectId: string | null) {
       });
     };
 
+    const handleNotificationNew = (notification: Notification) => {
+      // 1. Show a toast notification
+      addToast(notification.body, 'info');
+
+      // 2. Increment unread count query cache
+      queryClient.setQueryData(['notifications', 'unread-count'], (old: any) => {
+        return { count: (old?.count || 0) + 1 };
+      });
+
+      // 3. Prepend to recent list query cache
+      queryClient.setQueryData(['notifications', 'recent'], (old: any) => {
+        if (!old) return [notification];
+        return [notification, ...old].slice(0, 10);
+      });
+
+      // 4. Invalidate notifications list query (for the full notifications page)
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'list'] });
+    };
+
     socket.on('connect', handleConnect);
     socket.on('authenticated', joinRoom);
     socket.on('presence:update', handlePresence);
@@ -243,6 +274,7 @@ export function useProjectRealtime(projectId: string | null) {
     socket.on('project:removed', handleProjectRemoved);
     socket.on('task:images_updated', handleTaskImagesUpdated);
     socket.on('comment:reaction_updated', handleCommentReactionUpdated);
+    socket.on('notification:new', handleNotificationNew);
 
     return () => {
       socket.off('connect', handleConnect);
@@ -258,6 +290,7 @@ export function useProjectRealtime(projectId: string | null) {
       socket.off('project:removed', handleProjectRemoved);
       socket.off('task:images_updated', handleTaskImagesUpdated);
       socket.off('comment:reaction_updated', handleCommentReactionUpdated);
+      socket.off('notification:new', handleNotificationNew);
 
       if (socket.connected && projectId) {
         socket.emit('leaveProject', projectId);

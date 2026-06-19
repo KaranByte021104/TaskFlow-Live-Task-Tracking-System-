@@ -6,12 +6,14 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectRole, ActivityType } from '@prisma/client';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class CommentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtimeGateway: RealtimeGateway,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private async checkProjectMembership(
@@ -29,7 +31,7 @@ export class CommentsService {
     return member.role;
   }
 
-  async create(userId: string, taskId: string, text: string) {
+  async create(userId: string, taskId: string, text: string, mentionedUserIds?: string[]) {
     const task = await this.prisma.task.findUnique({
       where: { id: taskId },
       select: { projectId: true, title: true },
@@ -38,10 +40,7 @@ export class CommentsService {
       throw new NotFoundException('Task not found');
     }
 
-    const role = await this.checkProjectMembership(task.projectId, userId);
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot comment');
-    }
+    await this.checkProjectMembership(task.projectId, userId);
 
     const comment = await this.prisma.comment.create({
       data: {
@@ -109,6 +108,23 @@ export class CommentsService {
         _count: {
           select: {
             comments: true,
+            images: true,
+          },
+        },
+        labels: {
+          include: {
+            label: true,
+          },
+        },
+        dependencies: {
+          include: {
+            blockedBy: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+              },
+            },
           },
         },
       },
@@ -119,6 +135,35 @@ export class CommentsService {
       userId,
       userDisplayName: user?.displayName || 'Someone',
     });
+
+    // Trigger Mentions Notifications
+    if (mentionedUserIds && mentionedUserIds.length > 0) {
+      const uniqueMentionedIds = Array.from(new Set(mentionedUserIds));
+      for (const recipientId of uniqueMentionedIds) {
+        if (recipientId === userId) continue; // Don't notify self
+
+        // Verify they are members of this project
+        const isMember = await this.prisma.projectMember.findUnique({
+          where: {
+            userId_projectId: {
+              userId: recipientId,
+              projectId: task.projectId,
+            },
+          },
+        });
+
+        if (isMember) {
+          const link = `/dashboard/projects/${task.projectId}/board?task=${taskId}`;
+          await this.notificationsService.createNotification(
+            recipientId,
+            'MENTIONED_IN_COMMENT',
+            'Mentioned in Comment',
+            `${comment.user.displayName} mentioned you in a comment on task "${task.title}"`,
+            link,
+          );
+        }
+      }
+    }
 
     return comment;
   }
@@ -177,13 +222,10 @@ export class CommentsService {
       throw new NotFoundException('Comment not found');
     }
 
-    const role = await this.checkProjectMembership(
+    await this.checkProjectMembership(
       comment.task.projectId,
       userId,
     );
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot edit comments');
-    }
 
     if (comment.userId !== userId) {
       throw new ForbiddenException('Only the author can edit this comment');
@@ -224,13 +266,10 @@ export class CommentsService {
       comment.task.projectId,
       userId,
     );
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot delete comments');
-    }
 
-    if (comment.userId !== userId && role !== ProjectRole.ADMIN) {
+    if (comment.userId !== userId && role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER) {
       throw new ForbiddenException(
-        'Only the author or an admin can delete this comment',
+        'Only the author, an admin, or a manager can delete this comment',
       );
     }
 
@@ -253,6 +292,23 @@ export class CommentsService {
         _count: {
           select: {
             comments: true,
+            images: true,
+          },
+        },
+        labels: {
+          include: {
+            label: true,
+          },
+        },
+        dependencies: {
+          include: {
+            blockedBy: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+              },
+            },
           },
         },
       },

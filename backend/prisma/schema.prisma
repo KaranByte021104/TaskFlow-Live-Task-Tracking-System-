@@ -27,8 +27,19 @@ model User {
   createdTasks Task[]         @relation("TaskCreator")
   uploadedImages TaskImage[]   @relation("ImageUploader")
   otpTokens OtpToken[]
+  refreshTokens RefreshToken[]
+  notifyByEmail Boolean @default(true)
+  notifications Notification[]
+
+  sentMessages Message[]      @relation("MessageSender")
+  conversationParticipants ConversationParticipant[]
+  messageMentions MessageMention[] @relation("MessageMentionedUser")
+  projectFiles ProjectFile[]
+  createdChannels Channel[]   @relation("ChannelCreator")
+  channelMemberships ChannelMember[]
 
   @@map("users")
+  @@index([displayName])
 }
 
 model Project {
@@ -43,14 +54,17 @@ model Project {
   tasks       Task[]
   activities  Activity[]
   labels      Label[]
+  channels    Channel[]
+  files       ProjectFile[]
 
   @@map("projects")
+  @@index([name])
 }
 
 enum ProjectRole {
   ADMIN
   MEMBER
-  VIEWER
+  MANAGER
 }
 
 model ProjectMember {
@@ -59,6 +73,7 @@ model ProjectMember {
   projectId String
   role      ProjectRole
   joinedAt  DateTime    @default(now())
+  lastReadAt DateTime   @default(now())
 
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -106,6 +121,7 @@ model Task {
   blocking     TaskDependency[] @relation("BlockingTask")
 
   @@map("tasks")
+  @@index([title])
 }
 
 enum ActivityType {
@@ -116,6 +132,8 @@ enum ActivityType {
   COMMENT_ADDED
   MEMBER_ADDED
   MEMBER_REMOVED
+  FILE_UPLOADED
+  FILE_DELETED
 }
 
 model Activity {
@@ -147,6 +165,7 @@ model Comment {
   reactions CommentReaction[]
 
   @@map("comments")
+  @@index([text])
 }
 
 model TaskImage {
@@ -234,4 +253,162 @@ model TaskDependency {
 
   @@unique([taskId, blockedByTaskId])
   @@map("task_dependencies")
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  family     String
+  revoked    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_UPDATED
+  MENTIONED_IN_COMMENT
+  MENTIONED_IN_CHAT
+  STATUS_CHANGED_ON_ASSIGNED_TASK
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  recipientId String
+  type        NotificationType
+  read        Boolean          @default(false)
+  title       String
+  body        String
+  link        String?
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+
+  recipient   User             @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Channel {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  isPrivate   Boolean  @default(false)
+  isGeneral   Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  creatorId   String?
+  createdAt   DateTime @default(now())
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator     User?    @relation("ChannelCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+  messages    Message[]
+  members     ChannelMember[]
+
+  @@map("channels")
+}
+
+model ChannelMember {
+  id        String   @id @default(cuid())
+  channelId String
+  userId    String
+  joinedAt  DateTime @default(now())
+
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("channel_members")
+}
+
+
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime @default(now())
+  lastReadAt     DateTime @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  content        String
+  senderId       String
+  channelId      String?
+  conversationId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  sender         User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  channel        Channel?     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  mentions       MessageMention[]
+  attachments    MessageAttachment[]
+
+  @@map("messages")
+}
+
+model MessageMention {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation("MessageMentionedUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@map("message_mentions")
+}
+
+model MessageAttachment {
+  id           String   @id @default(cuid())
+  messageId    String
+  originalName String
+  storedName   String
+  url          String
+  size         Int
+  mimeType     String
+  createdAt    DateTime @default(now())
+
+  message      Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("message_attachments")
+}
+
+model ProjectFile {
+  id           String   @id @default(cuid())
+  projectId    String
+  originalName String
+  storedName   String
+  url          String
+  size         Int
+  mimeType     String
+  uploaderId   String
+  createdAt    DateTime @default(now())
+
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploader     User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  @@map("project_files")
 }

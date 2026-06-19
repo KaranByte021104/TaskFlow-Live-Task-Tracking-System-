@@ -34,8 +34,14 @@ export class ProfileController {
     @GetUser('id') userId: string,
     @Body() updateProfileDto: UpdateProfileDto,
   ) {
-    if (!updateProfileDto.name && !updateProfileDto.email) {
-      throw new BadRequestException('At least name or email must be provided');
+    if (
+      !updateProfileDto.name &&
+      !updateProfileDto.email &&
+      updateProfileDto.notifyByEmail === undefined
+    ) {
+      throw new BadRequestException(
+        'At least one profile field (name, email, notifyByEmail) must be provided',
+      );
     }
     return this.profileService.updateProfile(userId, updateProfileDto);
   }

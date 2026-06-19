@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   ConflictException,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -14,12 +15,17 @@ import {
   ProjectRole,
 } from '@prisma/client';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtimeGateway: RealtimeGateway,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // Helper to verify project membership and return user role
@@ -88,10 +94,7 @@ export class TasksService {
       dueDate?: string;
     },
   ) {
-    const role = await this.checkProjectMembership(projectId, creatorId);
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot create tasks');
-    }
+    await this.checkProjectMembership(projectId, creatorId);
 
     const task = await this.prisma.task.create({
       data: {
@@ -160,6 +163,9 @@ export class TasksService {
         taskTitle: task.title,
       },
     );
+
+    // Invalidate stats cache
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
 
     return task;
   }
@@ -357,15 +363,18 @@ export class TasksService {
     },
   ) {
     const role = await this.checkProjectMembership(projectId, userId);
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot modify tasks');
-    }
 
     const originalTask = await this.prisma.task.findFirst({
       where: { id: taskId, projectId },
     });
     if (!originalTask) {
       throw new NotFoundException('Task not found');
+    }
+
+    if (role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER) {
+      if (originalTask.creatorId !== userId && originalTask.assigneeId !== userId) {
+        throw new ForbiddenException('Members can only edit their own tasks');
+      }
     }
 
     // Check task blockers if moving to IN_PROGRESS
@@ -509,6 +518,54 @@ export class TasksService {
       });
     }
 
+    // Trigger Notifications
+    const assigneeChanged =
+      data.assigneeId !== undefined &&
+      data.assigneeId !== originalTask.assigneeId;
+    const currentAssigneeId = updatedTask.assigneeId;
+    if (currentAssigneeId && currentAssigneeId !== userId) {
+      const link = `/dashboard/projects/${projectId}/board?task=${taskId}`;
+      if (data.status && data.status !== originalTask.status) {
+        // Status changed on your assigned task
+        await this.notificationsService.createNotification(
+          currentAssigneeId,
+          'STATUS_CHANGED_ON_ASSIGNED_TASK',
+          'Task Status Changed',
+          `The status of your assigned task "${updatedTask.title}" was changed to ${updatedTask.status}`,
+          link,
+        );
+      } else if (assigneeChanged) {
+        // Task assigned
+        await this.notificationsService.createNotification(
+          currentAssigneeId,
+          'TASK_ASSIGNED',
+          'Task Assigned',
+          `You have been assigned to the task: "${updatedTask.title}"`,
+          link,
+        );
+      } else {
+        // Other task details updated
+        const hasOtherChanges =
+          (data.title && data.title !== originalTask.title) ||
+          (data.description !== undefined &&
+            data.description !== originalTask.description) ||
+          (data.priority && data.priority !== originalTask.priority) ||
+          (data.dueDate !== undefined && data.dueDate !== originalTask.dueDate);
+        if (hasOtherChanges) {
+          await this.notificationsService.createNotification(
+            currentAssigneeId,
+            'TASK_UPDATED',
+            'Task Updated',
+            `Your assigned task "${updatedTask.title}" has been updated`,
+            link,
+          );
+        }
+      }
+    }
+
+    // Invalidate stats cache
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
+
     return updatedTask;
   }
 
@@ -523,10 +580,10 @@ export class TasksService {
       throw new NotFoundException('Task not found');
     }
 
-    // Check permissions: ADMIN role or task creator
-    if (role !== ProjectRole.ADMIN && task.creatorId !== userId) {
+    // Check permissions: ADMIN, MANAGER, or task creator
+    if (role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER && task.creatorId !== userId) {
       throw new ForbiddenException(
-        'Only project admins or the task creator can delete tasks',
+        'Only project admins, managers, or the task creator can delete tasks',
       );
     }
 
@@ -546,6 +603,9 @@ export class TasksService {
       userId,
       userDisplayName: deleterUser?.displayName || 'Someone',
     });
+
+    // Invalidate stats cache
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
 
     return { success: true, message: 'Task deleted successfully' };
   }
@@ -618,8 +678,8 @@ export class TasksService {
     }
 
     const role = await this.checkProjectMembership(task.projectId, userId);
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot modify task dependencies');
+    if (role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER) {
+      throw new ForbiddenException('Only project admins and managers can modify task dependencies');
     }
 
     if (taskId === blockedByTaskId) {
@@ -685,8 +745,8 @@ export class TasksService {
     }
 
     const role = await this.checkProjectMembership(task.projectId, userId);
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot modify task dependencies');
+    if (role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER) {
+      throw new ForbiddenException('Only project admins and managers can modify task dependencies');
     }
 
     const existing = await this.prisma.taskDependency.findUnique({

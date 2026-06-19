@@ -49,7 +49,7 @@ export default function RegisterPage() {
     setError(null);
     try {
       const response = await registerApi(data.name, data.email, data.password);
-      setAuth(response.user, response.accessToken);
+      setAuth(response.user, response.accessToken, response.refreshToken);
       window.location.href = '/dashboard';
     } catch (err: any) {
       setError(

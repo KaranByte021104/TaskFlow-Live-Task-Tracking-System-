@@ -15,6 +15,7 @@ import Input from '../../../components/ui/input';
 const profileSchema = zod.object({
   name: zod.string().min(2, 'Name must be at least 2 characters long'),
   email: zod.string().email('Please enter a valid email address'),
+  notifyByEmail: zod.boolean().optional(),
 });
 
 type ProfileFormValues = zod.infer<typeof profileSchema>;
@@ -41,6 +42,7 @@ export default function ProfilePage() {
     defaultValues: {
       name: user?.displayName || '',
       email: user?.email || '',
+      notifyByEmail: user?.notifyByEmail ?? true,
     },
   });
 
@@ -50,6 +52,7 @@ export default function ProfilePage() {
       reset({
         name: user.displayName,
         email: user.email,
+        notifyByEmail: user.notifyByEmail ?? true,
       });
     }
   }, [user, reset]);
@@ -126,11 +129,13 @@ export default function ProfilePage() {
       const updatedUser = await updateProfileApi({
         name: values.name,
         email: values.email,
+        notifyByEmail: values.notifyByEmail,
       });
       setUser(updatedUser);
       reset({
         name: updatedUser.displayName,
         email: updatedUser.email,
+        notifyByEmail: updatedUser.notifyByEmail ?? true,
       });
       addToast('Profile updated successfully', 'success');
     } catch (err: any) {
@@ -256,6 +261,30 @@ export default function ProfilePage() {
                   {...register('email')}
                 />
                 <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                Notification Preferences
+              </h3>
+              <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20">
+                <div className="space-y-0.5 pr-4">
+                  <label className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Email Notifications
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Receive email alerts for task assignments, updates, and comments.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    {...register('notifyByEmail')}
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600"></div>
+                </label>
               </div>
             </div>
 

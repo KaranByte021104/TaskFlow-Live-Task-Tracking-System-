@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CheckSquare, Calendar, MessageSquare, AlertCircle } from 'lucide-react';
+import { CheckSquare, Calendar, MessageSquare, AlertCircle, Paperclip } from 'lucide-react';
 import { format } from 'date-fns';
 import { getMyTasksApi, Task } from '@/lib/tasks-api';
 import Badge from '@/components/ui/badge';
@@ -115,18 +115,26 @@ export default function MyTasksPage() {
                     <tr
                       key={task.id}
                       onClick={() => handleTaskClick(task)}
-                      className="hover:bg-slate-50/70 dark:hover:bg-slate-850/50 transition cursor-pointer group"
+                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition cursor-pointer group"
                     >
                       {/* Task Title */}
                       <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition max-w-sm">
                         <div className="space-y-1">
                           <span className="line-clamp-2 leading-relaxed">{task.title}</span>
-                          {task._count?.comments && task._count.comments > 0 ? (
-                            <span className="inline-flex items-center text-[10px] text-slate-400 dark:text-slate-500 font-semibold gap-1">
-                              <MessageSquare className="w-3 h-3" />
-                              {task._count.comments} {task._count.comments === 1 ? 'comment' : 'comments'}
-                            </span>
-                          ) : null}
+                          <div className="flex items-center gap-3 mt-1">
+                            {task._count?.comments && task._count.comments > 0 ? (
+                              <span className="inline-flex items-center text-[10px] text-slate-400 dark:text-slate-500 font-semibold gap-1">
+                                <MessageSquare className="w-3 h-3" />
+                                {task._count.comments} {task._count.comments === 1 ? 'comment' : 'comments'}
+                              </span>
+                            ) : null}
+                            {task._count?.images && task._count.images > 0 ? (
+                              <span className="inline-flex items-center text-[10px] text-slate-400 dark:text-slate-500 font-semibold gap-1">
+                                <Paperclip className="w-3 h-3" />
+                                {task._count.images} {task._count.images === 1 ? 'attachment' : 'attachments'}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </td>
 

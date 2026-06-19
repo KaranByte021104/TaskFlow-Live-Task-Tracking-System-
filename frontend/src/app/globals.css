@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 15, 23, 42;
+  --foreground-rgb: 241, 245, 249;
   --background-start-rgb: 241, 245, 249;
   --background-end-rgb: 255, 255, 255;
 }
@@ -36,8 +36,10 @@ textarea:-webkit-autofill:focus,
 select:-webkit-autofill,
 select:-webkit-autofill:hover,
 select:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0px 1000px #f8fafc inset !important; /* Light mode bg (slate-50) */
-  -webkit-text-fill-color: #0f172a !important; /* Light mode text (slate-900) */
+  -webkit-box-shadow: 0 0 0px 1000px #f8fafc inset !important;
+  /* Light mode bg (slate-50) */
+  -webkit-text-fill-color: #0f172a !important;
+  /* Light mode text (slate-900) */
   transition: background-color 5000s ease-in-out 0s;
 }
 
@@ -50,8 +52,10 @@ select:-webkit-autofill:focus {
 .dark select:-webkit-autofill,
 .dark select:-webkit-autofill:hover,
 .dark select:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0px 1000px #020617 inset !important; /* Dark mode bg (slate-950) */
-  -webkit-text-fill-color: #f8fafc !important; /* Dark mode text (slate-50) */
+  -webkit-box-shadow: 0 0 0px 1000px #020617 inset !important;
+  /* Dark mode bg (slate-950) */
+  -webkit-text-fill-color: #f8fafc !important;
+  /* Dark mode text (slate-50) */
 }
 
 /* Invert calendar picker indicator icon in dark mode for visibility */

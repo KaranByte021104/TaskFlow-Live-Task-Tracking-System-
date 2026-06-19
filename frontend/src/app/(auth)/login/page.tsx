@@ -53,7 +53,7 @@ function LoginForm() {
     setError(null);
     try {
       const response = await loginApi(data.email, data.password);
-      setAuth(response.user, response.accessToken);
+      setAuth(response.user, response.accessToken, response.refreshToken);
       window.location.href = '/dashboard';
     } catch (err: any) {
       setError(

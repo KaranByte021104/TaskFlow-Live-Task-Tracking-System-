@@ -157,8 +157,15 @@ export async function getCommentReactionsApi(commentId: string): Promise<Grouped
   return response.data;
 }
 
-export async function createCommentApi(taskId: string, text: string): Promise<Comment> {
-  const response = await api.post<Comment>(`/tasks/${taskId}/comments`, { text });
+export async function createCommentApi(
+  taskId: string,
+  text: string,
+  mentionedUserIds?: string[],
+): Promise<Comment> {
+  const response = await api.post<Comment>(`/tasks/${taskId}/comments`, {
+    text,
+    mentionedUserIds,
+  });
   return response.data;
 }
 

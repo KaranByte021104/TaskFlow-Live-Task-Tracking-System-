@@ -55,4 +55,45 @@ export class MailService {
       throw error;
     }
   }
+
+  async sendNotificationEmail(
+    email: string,
+    recipientName: string,
+    title: string,
+    body: string,
+    link?: string,
+  ): Promise<void> {
+    const appUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+    const actionUrl = link ? `${appUrl}${link}` : null;
+    const htmlContent = `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #2563eb; margin-bottom: 20px;">New Notification</h2>
+        <p>Hello ${recipientName},</p>
+        <p><strong>${title}</strong></p>
+        <p>${body}</p>
+        ${
+          actionUrl
+            ? `<div style="margin: 30px auto; text-align: center;">
+                <a href="${actionUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">View in TaskFlow</a>
+              </div>`
+            : ''
+        }
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        <p style="font-size: 12px; color: #64748b;">You received this because email notifications are enabled on your profile. You can turn them off in your Settings.</p>
+      </div>
+    `;
+
+    try {
+      await this.transporter.sendMail({
+        from: `"TaskFlow Support" <${this.configService.get<string>('SMTP_USER')}>`,
+        to: email,
+        subject: `[TaskFlow] Notification: ${title}`,
+        html: htmlContent,
+      });
+      this.logger.log(`Notification email sent to: ${email}`);
+    } catch (error) {
+      this.logger.error(`Failed to send notification email to: ${email}`, error);
+      throw error;
+    }
+  }
 }

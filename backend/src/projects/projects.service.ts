@@ -2,16 +2,20 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Project, ProjectRole, ActivityType } from '@prisma/client';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 
 @Injectable()
 export class ProjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtimeGateway: RealtimeGateway,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
   // Find if user has a membership and get their role
@@ -32,35 +36,56 @@ export class ProjectsService {
     userId: string,
     data: { name: string; description?: string; color?: string },
   ): Promise<Project> {
-    const project = await this.prisma.project.create({
-      data: {
-        name: data.name,
-        description: data.description,
-        color: data.color || '#3b82f6',
-        members: {
-          create: {
-            userId: userId,
-            role: ProjectRole.ADMIN,
+    const project = await this.prisma.$transaction(async (tx) => {
+      const newProject = await tx.project.create({
+        data: {
+          name: data.name,
+          description: data.description,
+          color: data.color || '#3b82f6',
+          members: {
+            create: {
+              userId: userId,
+              role: ProjectRole.ADMIN,
+            },
           },
         },
-      },
+      });
+
+      // Create default channel
+      await tx.channel.create({
+        data: {
+          projectId: newProject.id,
+          name: data.name,
+        },
+      });
+
+      // Log Activity: MEMBER_ADDED (for creator)
+      await tx.activity.create({
+        data: {
+          type: ActivityType.MEMBER_ADDED,
+          projectId: newProject.id,
+          userId: userId,
+          metadata: { info: 'Project creator registered as ADMIN' },
+        },
+      });
+
+      return newProject;
     });
 
-    // Log Activity: MEMBER_ADDED (for creator)
-    await this.prisma.activity.create({
-      data: {
-        type: ActivityType.MEMBER_ADDED,
-        projectId: project.id,
-        userId: userId,
-        metadata: { info: 'Project creator registered as ADMIN' },
-      },
-    });
+    // Invalidate project list cache
+    await this.cacheManager.del(`project-list:user:${userId}`);
 
     return project;
   }
 
   // List all projects user belongs to with counts and completion percentages
   async list(userId: string) {
+    const cacheKey = `project-list:user:${userId}`;
+    const cached = await this.cacheManager.get<any>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const memberships = await this.prisma.projectMember.findMany({
       where: { userId },
       include: {
@@ -87,7 +112,7 @@ export class ProjectsService {
       },
     });
 
-    return memberships.map((m) => {
+    const result = memberships.map((m) => {
       const project = m.project;
       const totalTasks = project.tasks.length;
       const getTaskWeight = (status: string) => {
@@ -117,6 +142,9 @@ export class ProjectsService {
         completionPercentage,
       };
     });
+
+    await this.cacheManager.set(cacheKey, result, 60000);
+    return result;
   }
 
   // Get user overall dashboard summary metrics
@@ -212,7 +240,7 @@ export class ProjectsService {
       );
     }
 
-    return this.prisma.project.update({
+    const updatedProject = await this.prisma.project.update({
       where: { id: projectId },
       data: {
         name: data.name,
@@ -220,6 +248,18 @@ export class ProjectsService {
         color: data.color,
       },
     });
+
+    // Invalidate cache
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
+    const members = await this.prisma.projectMember.findMany({
+      where: { projectId },
+      select: { userId: true },
+    });
+    for (const m of members) {
+      await this.cacheManager.del(`project-list:user:${m.userId}`);
+    }
+
+    return updatedProject;
   }
 
   // Delete project (requires ADMIN role)
@@ -232,9 +272,20 @@ export class ProjectsService {
       throw new ForbiddenException('Only project admins can delete projects');
     }
 
+    const members = await this.prisma.projectMember.findMany({
+      where: { projectId },
+      select: { userId: true },
+    });
+
     await this.prisma.project.delete({
       where: { id: projectId },
     });
+
+    // Invalidate cache
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
+    for (const m of members) {
+      await this.cacheManager.del(`project-list:user:${m.userId}`);
+    }
   }
 
   // Team Membership Endpoints
@@ -245,8 +296,12 @@ export class ProjectsService {
     data: { email: string; role: ProjectRole },
   ) {
     const adminRole = await this.getMemberRole(projectId, adminId);
-    if (adminRole !== ProjectRole.ADMIN) {
-      throw new ForbiddenException('Only project admins can manage members');
+    if (adminRole !== ProjectRole.ADMIN && adminRole !== ProjectRole.MANAGER) {
+      throw new ForbiddenException('Only project admins and managers can manage members');
+    }
+
+    if (adminRole === ProjectRole.MANAGER && data.role === ProjectRole.ADMIN) {
+      throw new ForbiddenException('Managers cannot assign the ADMIN role');
     }
 
     // Look up user by email
@@ -300,6 +355,11 @@ export class ProjectsService {
       projectId,
     });
 
+    // Invalidate caches
+    await this.cacheManager.del(`project-list:user:${userToInvite.id}`);
+    await this.cacheManager.del(`project-list:user:${adminId}`);
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
+
     return member;
   }
 
@@ -311,9 +371,9 @@ export class ProjectsService {
     role: ProjectRole,
   ) {
     const adminRole = await this.getMemberRole(projectId, adminId);
-    if (adminRole !== ProjectRole.ADMIN) {
+    if (adminRole !== ProjectRole.ADMIN && adminRole !== ProjectRole.MANAGER) {
       throw new ForbiddenException(
-        'Only project admins can manage member roles',
+        'Only project admins and managers can manage member roles',
       );
     }
 
@@ -323,6 +383,14 @@ export class ProjectsService {
 
     if (!memberToUpdate || memberToUpdate.projectId !== projectId) {
       throw new NotFoundException('Project member record not found');
+    }
+
+    if (adminRole === ProjectRole.MANAGER) {
+      if (memberToUpdate.role === ProjectRole.ADMIN || role === ProjectRole.ADMIN) {
+        throw new ForbiddenException(
+          'Managers cannot modify admin roles or assign admin role',
+        );
+      }
     }
 
     const updated = await this.prisma.projectMember.update({
@@ -345,14 +413,17 @@ export class ProjectsService {
       role,
     });
 
+    // Invalidate caches
+    await this.cacheManager.del(`project-list:user:${updated.userId}`);
+
     return updated;
   }
 
   // Remove member
   async removeMember(projectId: string, adminId: string, memberId: string) {
     const adminRole = await this.getMemberRole(projectId, adminId);
-    if (adminRole !== ProjectRole.ADMIN) {
-      throw new ForbiddenException('Only project admins can remove members');
+    if (adminRole !== ProjectRole.ADMIN && adminRole !== ProjectRole.MANAGER) {
+      throw new ForbiddenException('Only project admins and managers can remove members');
     }
 
     const memberToRemove = await this.prisma.projectMember.findUnique({
@@ -361,6 +432,10 @@ export class ProjectsService {
 
     if (!memberToRemove || memberToRemove.projectId !== projectId) {
       throw new NotFoundException('Project member record not found');
+    }
+
+    if (adminRole === ProjectRole.MANAGER && memberToRemove.role === ProjectRole.ADMIN) {
+      throw new ForbiddenException('Managers cannot remove admin members');
     }
 
     // Protect last admin removal
@@ -394,6 +469,11 @@ export class ProjectsService {
         projectId,
       },
     );
+
+    // Invalidate caches
+    await this.cacheManager.del(`project-list:user:${memberToRemove.userId}`);
+    await this.cacheManager.del(`project-list:user:${adminId}`);
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
   }
 
   // Get project activities list (max 50, sorted desc)
@@ -430,6 +510,12 @@ export class ProjectsService {
     const isMember = await this.getMemberRole(projectId, userId);
     if (!isMember) {
       throw new NotFoundException('Project not found');
+    }
+
+    const cacheKey = `project-stats:project:${projectId}`;
+    const cached = await this.cacheManager.get<any>(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     const tasks = await this.prisma.task.findMany({
@@ -514,7 +600,7 @@ export class ProjectsService {
       },
     });
 
-    return {
+    const statsResult = {
       totalTasks,
       completedTasks,
       inProgressTasks,
@@ -528,6 +614,9 @@ export class ProjectsService {
       recentActivities,
       upcomingTasks,
     };
+
+    await this.cacheManager.set(cacheKey, statsResult, 60000);
+    return statsResult;
   }
 
   // Get all tasks assigned to the user across all projects
@@ -554,6 +643,7 @@ export class ProjectsService {
         _count: {
           select: {
             comments: true,
+            images: true,
           },
         },
       },

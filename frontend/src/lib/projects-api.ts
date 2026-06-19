@@ -17,7 +17,7 @@ export interface ProjectMember {
   id: string;
   userId: string;
   projectId: string;
-  role: 'ADMIN' | 'MEMBER' | 'VIEWER';
+  role: 'ADMIN' | 'MANAGER' | 'MEMBER';
   joinedAt: string;
   user: {
     id: string;
@@ -55,12 +55,12 @@ export async function deleteProjectApi(projectId: string): Promise<void> {
   await api.delete(`/projects/${projectId}`);
 }
 
-export async function addProjectMemberApi(projectId: string, data: { email: string; role: 'ADMIN' | 'MEMBER' | 'VIEWER' }): Promise<ProjectMember> {
+export async function addProjectMemberApi(projectId: string, data: { email: string; role: 'ADMIN' | 'MANAGER' | 'MEMBER' }): Promise<ProjectMember> {
   const response = await api.post<ProjectMember>(`/projects/${projectId}/members`, data);
   return response.data;
 }
 
-export async function updateProjectMemberRoleApi(projectId: string, memberId: string, role: 'ADMIN' | 'MEMBER' | 'VIEWER'): Promise<ProjectMember> {
+export async function updateProjectMemberRoleApi(projectId: string, memberId: string, role: 'ADMIN' | 'MANAGER' | 'MEMBER'): Promise<ProjectMember> {
   const response = await api.patch<ProjectMember>(`/projects/${projectId}/members/${memberId}`, { role });
   return response.data;
 }

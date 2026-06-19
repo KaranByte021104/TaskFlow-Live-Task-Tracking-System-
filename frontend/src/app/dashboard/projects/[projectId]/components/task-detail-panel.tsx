@@ -97,6 +97,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
     queryClient.invalidateQueries({ queryKey: ['project-stats', projectId] });
     queryClient.invalidateQueries({ queryKey: ['projects'] });
     queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
   };
 
   const handleDeleted = (deletedImageId: string) => {
@@ -107,12 +108,17 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
     queryClient.invalidateQueries({ queryKey: ['project-stats', projectId] });
     queryClient.invalidateQueries({ queryKey: ['projects'] });
     queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
   };
 
   // Check user permissions in project
   const userMembership = projectDetail?.members.find((m) => m.userId === currentUser?.id);
   const isAdmin = userMembership?.role === 'ADMIN';
-  const isViewer = userMembership?.role === 'VIEWER';
+  const isManager = userMembership?.role === 'MANAGER';
+  const isManagerOrAdmin = isAdmin || isManager;
+
+  const isOwnTask = task && (task.creatorId === currentUser?.id || task.assigneeId === currentUser?.id);
+  const canEdit = isManagerOrAdmin || isOwnTask;
 
   useEffect(() => {
     if (task) {
@@ -198,6 +204,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
       queryClient.invalidateQueries({ queryKey: ['project-stats', projectId] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
       addToast('Task updated successfully', 'success');
       setShowSavedMsg(true);
       setTimeout(() => setShowSavedMsg(false), 2500);
@@ -212,6 +219,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
       queryClient.invalidateQueries({ queryKey: ['project-stats', projectId] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
       onClose();
     },
   });
@@ -252,6 +260,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
       queryClient.invalidateQueries({ queryKey: ['task-dependencies', taskId] });
       queryClient.invalidateQueries({ queryKey: ['task', projectId, taskId] });
       queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
     },
     onError: (err: any) => {
       addToast(err.response?.data?.message || 'Failed to add dependency.', 'error');
@@ -264,6 +273,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
       queryClient.invalidateQueries({ queryKey: ['task-dependencies', taskId] });
       queryClient.invalidateQueries({ queryKey: ['task', projectId, taskId] });
       queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
     },
     onError: (err: any) => {
       addToast(err.response?.data?.message || 'Failed to remove dependency.', 'error');
@@ -282,6 +292,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['task', projectId, taskId] });
       queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
     },
   });
 
@@ -290,17 +301,106 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['task', projectId, taskId] });
       queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
     },
   });
 
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionStartIndex, setMentionStartIndex] = useState(-1);
+  const [selectedMentionedUserIds, setSelectedMentionedUserIds] = useState<string[]>([]);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const createCommentMutation = useMutation({
-    mutationFn: (text: string) => createCommentApi(taskId, text),
+    mutationFn: ({ text, mentionedUserIds }: { text: string; mentionedUserIds: string[] }) =>
+      createCommentApi(taskId, text, mentionedUserIds),
     onSuccess: () => {
       setCommentText('');
+      setSelectedMentionedUserIds([]);
       queryClient.invalidateQueries({ queryKey: ['comments', taskId] });
       queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
     },
   });
+
+  const filteredMembers = projectDetail?.members.filter((m) => {
+    const name = m.user.displayName || '';
+    return name.toLowerCase().includes(mentionQuery.toLowerCase());
+  }) || [];
+
+  useEffect(() => {
+    setMentionActiveIndex(0);
+  }, [mentionQuery]);
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setCommentText(value);
+
+    const selectionStart = e.target.selectionStart;
+    const textBeforeCursor = value.slice(0, selectionStart);
+    const lastAtIdx = textBeforeCursor.lastIndexOf('@');
+
+    if (lastAtIdx !== -1) {
+      const query = textBeforeCursor.slice(lastAtIdx + 1);
+      const spaceBeforeAt = lastAtIdx === 0 || /\s/.test(textBeforeCursor.charAt(lastAtIdx - 1));
+      const noSpaceInQuery = !/\s/.test(query);
+
+      if (spaceBeforeAt && noSpaceInQuery) {
+        setShowMentions(true);
+        setMentionQuery(query);
+        setMentionStartIndex(lastAtIdx);
+        return;
+      }
+    }
+
+    setShowMentions(false);
+    setMentionQuery('');
+  };
+
+  const handleSelectMention = (member: any) => {
+    const textBefore = commentText.slice(0, mentionStartIndex);
+    const textAfter = commentText.slice(textareaRef.current?.selectionStart || mentionStartIndex + mentionQuery.length + 1);
+    const insertText = `@${member.user.displayName} `;
+    const newText = textBefore + insertText + textAfter;
+
+    setCommentText(newText);
+    setShowMentions(false);
+    setMentionQuery('');
+
+    if (!selectedMentionedUserIds.includes(member.user.id)) {
+      setSelectedMentionedUserIds((prev) => [...prev, member.user.id]);
+    }
+
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      const newCursorPos = mentionStartIndex + insertText.length;
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.selectionStart = newCursorPos;
+          textareaRef.current.selectionEnd = newCursorPos;
+        }
+      }, 0);
+    }
+  };
+
+  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showMentions && filteredMembers.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionActiveIndex((prev) => (prev + 1) % filteredMembers.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionActiveIndex((prev) => (prev - 1 + filteredMembers.length) % filteredMembers.length);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSelectMention(filteredMembers[mentionActiveIndex]);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowMentions(false);
+      }
+    }
+  };
 
   const updateCommentMutation = useMutation({
     mutationFn: ({ commentId, text }: { commentId: string; text: string }) => updateCommentApi(commentId, text),
@@ -316,6 +416,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comments', taskId] });
       queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
     },
   });
 
@@ -384,7 +485,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
   };
 
   const triggerAutoSave = (fields: Parameters<typeof updateMutation.mutate>[0]) => {
-    if (isViewer) return;
+    if (!canEdit) return;
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
@@ -474,7 +575,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
             <div className="flex-1 p-6 sm:p-8 space-y-6 md:w-2/3">
               {/* Task Title Input/Header */}
               <div className="space-y-1">
-                {isEditingTitle && !isViewer ? (
+                {isEditingTitle && canEdit ? (
                   <input
                     type="text"
                     value={titleValue}
@@ -489,11 +590,11 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                 ) : (
                   <h1
                     onClick={() => {
-                      if (!isViewer) setIsEditingTitle(true);
+                      if (canEdit) setIsEditingTitle(true);
                     }}
                     className={clsx(
                       'text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight leading-snug',
-                      !isViewer && 'hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer rounded px-1 -mx-1 transition'
+                      canEdit && 'hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer rounded px-1 -mx-1 transition'
                     )}
                   >
                     {task.title}
@@ -506,27 +607,27 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   Description
                 </label>
-                {isEditingDesc && !isViewer ? (
+                {isEditingDesc && canEdit ? (
                   <textarea
                     value={descValue}
                     onChange={(e) => setDescValue(e.target.value)}
                     onBlur={handleDescBlur}
                     rows={6}
                     autoFocus
-                    className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-805 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:border-blue-400 text-sm text-slate-800 dark:text-slate-100 leading-relaxed bg-slate-50 dark:bg-slate-950"
+                    className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:border-blue-400 text-sm text-slate-800 dark:text-slate-100 leading-relaxed bg-slate-50 dark:bg-slate-950"
                   />
                 ) : (
                   <div
                     onClick={() => {
-                      if (!isViewer) setIsEditingDesc(true);
+                      if (canEdit) setIsEditingDesc(true);
                     }}
                     className={clsx(
                       'text-sm text-slate-600 dark:text-slate-300 leading-relaxed min-h-[100px] p-3 rounded-lg border border-transparent',
-                      !isViewer ? 'hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-100 dark:hover:border-slate-800 cursor-pointer transition' : 'bg-slate-50 dark:bg-slate-950 border-slate-50 dark:border-slate-950'
+                      canEdit ? 'hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-100 dark:hover:border-slate-800 cursor-pointer transition' : 'bg-slate-50 dark:bg-slate-900 border-slate-50 dark:border-slate-900'
                     )}
                   >
                     {task.description || (
-                      <span className="text-slate-400 dark:text-slate-500 italic">No description added. Click to edit...</span>
+                      <span className="text-slate-400 dark:text-slate-505 italic">No description added. Click to edit...</span>
                     )}
                   </div>
                 )}
@@ -542,13 +643,13 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                 {taskImages.length > 0 && (
                   <ImageGallery
                     images={taskImages}
-                    isReadOnly={isViewer}
+                    isReadOnly={!canEdit}
                     isAdmin={isAdmin}
                     onDeleted={handleDeleted}
                   />
                 )}
 
-                {!isViewer && (
+                {canEdit && (
                   <ImageUploader
                     taskId={taskId}
                     onUploaded={handleUploaded}
@@ -571,25 +672,25 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                     <div className="py-4 text-center text-xs text-slate-400 dark:text-slate-500">Loading comments...</div>
                   ) : comments.length > 0 ? (
                     comments.map((comment) => {
-                      const isAuthor = comment.userId === currentUser?.id && !isViewer;
-                      const canDeleteComment = (isAuthor || isAdmin) && !isViewer;
+                      const isAuthor = comment.userId === currentUser?.id;
+                      const canDeleteComment = isAuthor || isAdmin || isManager;
                       const isEditing = editingCommentId === comment.id;
 
                       return (
                         <div key={comment.id} className="flex gap-3 group items-start text-xs p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
-                          <Avatar name={comment.user.displayName} src={comment.user.avatarUrl} size="sm" className="w-8 h-8" />
+                           <Avatar name={comment.user.displayName} src={comment.user.avatarUrl} size="sm" className="w-8 h-8" />
                           <div className="flex-1 space-y-1">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <span className="font-bold text-slate-800 dark:text-slate-205">{comment.user.displayName}</span>
-                                <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                                <span className="font-bold text-slate-800 dark:text-slate-200">{comment.user.displayName}</span>
+                                <span className="text-[10px] text-slate-400 dark:text-slate-505">
                                   {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
                                 </span>
                               </div>
                               
                               {!isEditing && (
                                 <div className="opacity-0 group-hover:opacity-100 flex gap-1.5 transition">
-                                  {!isViewer && (
+                                  {true && (
                                     <div className="relative">
                                       <button
                                         onClick={() => {
@@ -603,7 +704,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                                         <Smile className="w-3.5 h-3.5" />
                                       </button>
                                       {activeEmojiPickerCommentId === comment.id && (
-                                        <div className="absolute right-0 top-6 z-50 flex gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-1.5 rounded-lg shadow-xl animate-fade-in">
+                                        <div className="absolute right-0 top-6 z-50 flex gap-1 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 p-1.5 rounded-lg shadow-xl animate-fade-in">
                                           {['👍', '👎', '❤️', '🔥', '✅', '😂', '🎉', '😕'].map((emoji) => (
                                             <button
                                               key={emoji}
@@ -626,7 +727,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                                         setEditingCommentId(comment.id);
                                         setEditingCommentText(comment.text);
                                       }}
-                                      className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 p-0.5 rounded transition"
+                                      className="text-slate-400 hover:text-slate-705 dark:hover:text-slate-300 p-0.5 rounded transition"
                                       title="Edit Comment"
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
@@ -689,16 +790,16 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                                       <button
                                         key={group.emoji}
                                         onClick={() => {
-                                          if (!isViewer) {
+                                          if (true) {
                                             toggleReactionMutation.mutate({ commentId: comment.id, emoji: group.emoji });
                                           }
                                         }}
-                                        disabled={isViewer}
+                                        disabled={false}
                                         className={clsx(
                                           'flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-medium transition duration-150',
                                           group.reactedByMe
                                             ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-400 text-blue-600 dark:text-blue-400'
-                                            : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
+                                            : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-606 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
                                         )}
                                         title={group.users.map((u) => u.displayName).join(', ')}
                                       >
@@ -715,27 +816,61 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                       );
                     })
                   ) : (
-                    <div className="text-center py-6 text-slate-400 dark:text-slate-500 italic">
+                    <div className="text-center py-6 text-slate-400 dark:text-slate-505 italic">
                       No comments yet. Start the discussion!
                     </div>
                   )}
                 </div>
 
-                {!isViewer && (
+                {true && (
                   <div className="flex gap-3 items-start mt-2">
                     <Avatar name={currentUser?.displayName || 'User'} src={currentUser?.avatarUrl} size="sm" className="w-8 h-8 mt-1" />
                     <div className="flex-1 space-y-2">
-                      <textarea
-                        placeholder="Write a comment..."
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        rows={2}
-                        className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:border-blue-400 text-xs text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 transition-colors duration-200"
-                      />
+                      <div className="relative">
+                        <textarea
+                          ref={textareaRef}
+                          placeholder="Write a comment... Use @ to mention project members."
+                          value={commentText}
+                          onChange={handleTextareaChange}
+                          onKeyDown={handleTextareaKeyDown}
+                          rows={2}
+                          className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:border-blue-400 text-xs text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 transition-colors duration-200"
+                        />
+                        {showMentions && filteredMembers.length > 0 && (
+                          <div className="absolute bottom-full left-0 z-50 mb-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl py-1 max-h-48 overflow-y-auto backdrop-blur-md bg-opacity-95 dark:bg-opacity-95">
+                            {filteredMembers.map((member, idx) => (
+                              <button
+                                key={member.id}
+                                type="button"
+                                onClick={() => handleSelectMention(member)}
+                                onMouseEnter={() => setMentionActiveIndex(idx)}
+                                className={clsx(
+                                  "flex items-center gap-2 w-full px-3 py-2 text-left text-xs text-slate-700 dark:text-slate-300 font-semibold transition-colors",
+                                  idx === mentionActiveIndex
+                                    ? "bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-200"
+                                    : "hover:bg-slate-50 dark:hover:bg-slate-700"
+                                )}
+                              >
+                                <Avatar name={member.user.displayName} src={member.user.avatarUrl} size="sm" className="w-5 h-5" />
+                                <span>{member.user.displayName}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <div className="flex justify-end">
                         <Button
-                           disabled={!commentText.trim() || createCommentMutation.isPending}
-                          onClick={() => createCommentMutation.mutate(commentText.trim())}
+                          disabled={!commentText.trim() || createCommentMutation.isPending}
+                          onClick={() => {
+                            const validMentionedIds = selectedMentionedUserIds.filter((userId) => {
+                              const m = projectDetail?.members.find((member) => member.user.id === userId);
+                              return m && commentText.includes(`@${m.user.displayName}`);
+                            });
+                            createCommentMutation.mutate({
+                              text: commentText.trim(),
+                              mentionedUserIds: validMentionedIds,
+                            });
+                          }}
                           className="flex items-center gap-1.5"
                         >
                           Post Comment
@@ -750,7 +885,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
               <div className="border-t border-slate-100 dark:border-slate-800 pt-6 space-y-4">
                 <button
                   onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
-                  className="flex items-center justify-between w-full text-sm font-bold text-slate-850 dark:text-slate-100 hover:text-slate-900 dark:hover:text-white transition"
+                  className="flex items-center justify-between w-full text-sm font-bold text-slate-800 dark:text-slate-100 hover:text-slate-900 dark:hover:text-white transition"
                 >
                   <span className="flex items-center gap-2">
                     <span>History ({history.length})</span>
@@ -819,9 +954,9 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                   <div className="col-span-2">
                     <select
                       value={task.status}
-                      disabled={isViewer}
+                      disabled={!canEdit}
                       onChange={(e) => updateMutation.mutate({ status: e.target.value as TaskStatus })}
-                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
+                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
                     >
                       <option value="TODO">To Do</option>
                       <option value="IN_PROGRESS">In Progress</option>
@@ -837,9 +972,9 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                   <div className="col-span-2">
                     <select
                       value={task.priority}
-                      disabled={isViewer}
+                      disabled={!canEdit}
                       onChange={(e) => updateMutation.mutate({ priority: e.target.value as TaskPriority })}
-                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
+                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
                     >
                       <option value="LOW">Low</option>
                       <option value="MEDIUM">Medium</option>
@@ -854,9 +989,9 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                   <div className="col-span-2">
                     <select
                       value={task.assigneeId || ''}
-                      disabled={isViewer}
+                      disabled={!canEdit}
                       onChange={(e) => updateMutation.mutate({ assigneeId: e.target.value || null })}
-                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
+                      className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
                     >
                       <option value="">Unassigned</option>
                       {projectDetail?.members.map((m) => (
@@ -875,9 +1010,9 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                     <input
                       type="date"
                       value={task.dueDate ? task.dueDate.split('T')[0] : ''}
-                      disabled={isViewer}
+                      disabled={!canEdit}
                       onChange={(e) => updateMutation.mutate({ dueDate: e.target.value || null })}
-                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-305 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
+                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
                     />
                   </div>
                 </div>
@@ -894,7 +1029,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                           style={{ backgroundColor: tl.label.color }}
                         >
                           <span>{tl.label.name}</span>
-                          {!isViewer && (
+                          {canEdit && (
                             <button
                               type="button"
                               onClick={() => removeLabelMutation.mutate(tl.label.id)}
@@ -906,7 +1041,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                         </span>
                       ))}
 
-                      {!isViewer && (
+                      {canEdit && (
                         <div className="relative">
                           <button
                             type="button"
@@ -986,7 +1121,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                               </span>
                             </div>
 
-                            {!isViewer && (
+                            {!isManagerOrAdmin && (
                               <button
                                 type="button"
                                 onClick={() => removeDependencyMutation.mutate(blocker.id)}
@@ -1000,7 +1135,7 @@ export default function TaskDetailPanel({ isOpen, onClose, projectId, taskId, on
                       </div>
                     )}
 
-                    {!isViewer && (
+                    {isManagerOrAdmin && (
                       <div className="relative">
                         <Button
                           type="button"

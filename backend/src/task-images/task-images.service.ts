@@ -48,8 +48,14 @@ export class TaskImagesService {
     }
 
     const member = await this.checkProjectMembership(task.projectId, user.id);
-    if (member.role === 'VIEWER') {
-      throw new ForbiddenException('Viewers cannot upload images');
+    if (member.role !== 'ADMIN' && member.role !== 'MANAGER') {
+      const fullTask = await this.prisma.task.findUnique({
+        where: { id: taskId },
+        select: { creatorId: true, assigneeId: true },
+      });
+      if (fullTask && fullTask.creatorId !== user.id && fullTask.assigneeId !== user.id) {
+        throw new ForbiddenException('Members can only upload images to their own tasks');
+      }
     }
 
     const backendPort = this.configService.get<number>('PORT') || 3001;
@@ -146,9 +152,9 @@ export class TaskImagesService {
       user.id,
     );
 
-    if (image.uploaderId !== user.id && member.role !== 'ADMIN') {
+    if (image.uploaderId !== user.id && member.role !== 'ADMIN' && member.role !== 'MANAGER') {
       throw new ForbiddenException(
-        'Only the uploader or project admins can delete images',
+        'Only the uploader, project admins, or managers can delete images',
       );
     }
 

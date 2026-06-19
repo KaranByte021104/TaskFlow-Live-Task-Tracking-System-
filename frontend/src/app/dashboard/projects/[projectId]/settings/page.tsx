@@ -38,7 +38,7 @@ const projectSchema = zod.object({
 
 const inviteSchema = zod.object({
   email: zod.string().email('Please enter a valid email address'),
-  role: zod.enum(['ADMIN', 'MEMBER', 'VIEWER']),
+  role: zod.enum(['ADMIN', 'MANAGER', 'MEMBER']),
 });
 
 type ProjectFormValues = zod.infer<typeof projectSchema>;
@@ -121,10 +121,11 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
     enabled: !!params.projectId,
   });
 
-  // Check if current user is an ADMIN of this project
+  // Check if current user is an ADMIN or MANAGER of this project
   const userMembership = projectDetail?.members.find((m) => m.userId === currentUser?.id);
   const isAdmin = userMembership?.role === 'ADMIN';
-  const isViewer = userMembership?.role === 'VIEWER';
+  const isManager = userMembership?.role === 'MANAGER';
+  const isManagerOrAdmin = isAdmin || isManager;
 
   const {
     register: registerProject,
@@ -189,7 +190,7 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
   });
 
   const roleChangeMutation = useMutation({
-    mutationFn: ({ memberId, role }: { memberId: string; role: 'ADMIN' | 'MEMBER' | 'VIEWER' }) =>
+    mutationFn: ({ memberId, role }: { memberId: string; role: 'ADMIN' | 'MANAGER' | 'MEMBER' }) =>
       updateProjectMemberRoleApi(params.projectId, memberId, role),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project', params.projectId] });
@@ -318,8 +319,8 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
     );
   }
 
-  // Non-admins see a clear read-only notice instead of a partially accessible settings page
-  if (!isAdmin) {
+  // Non-admins (MEMBER role) see a clear read-only notice instead of an editable settings page
+  if (!isAdmin && !isManager) {
     return (
       <div className="space-y-6">
         {/* Access Restricted Banner */}
@@ -508,8 +509,8 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
           <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Team Members</h3>
         </div>
 
-        {/* Invite Member form (Admin Only) */}
-        {isAdmin && (
+        {/* Invite Member form (Admin & Manager) */}
+        {isManagerOrAdmin && (
           <form
             onSubmit={handleSubmitInvite(onInviteSubmit)}
             className="p-5 border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 grid gap-4 sm:grid-cols-12 items-end transition-colors"
@@ -531,8 +532,8 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
                 className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/30 focus:border-blue-400 text-sm transition-colors duration-200"
               >
                 <option value="MEMBER">Member</option>
-                <option value="VIEWER">Viewer</option>
-                <option value="ADMIN">Admin</option>
+                <option value="MANAGER">Manager</option>
+                {!isManager && <option value="ADMIN">Admin</option>}
               </select>
             </div>
             <div className="sm:col-span-3">
@@ -563,8 +564,8 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
                 <th className="px-6 py-3.5 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   Role
                 </th>
-                {isAdmin && (
-                  <th className="px-6 py-3.5 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                {isManagerOrAdmin && (
+                  <th className="px-6 py-3.5 text-right text-xs font-bold text-slate-550 dark:text-slate-400 uppercase tracking-wider">
                     Actions
                   </th>
                 )}
@@ -583,7 +584,7 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {isAdmin && member.userId !== currentUser?.id ? (
+                    {isManagerOrAdmin && member.userId !== currentUser?.id && !(isManager && member.role === 'ADMIN') ? (
                       <select
                         value={member.role}
                         onChange={(e) =>
@@ -592,20 +593,20 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
                             role: e.target.value as any,
                           })
                         }
-                        className="px-2.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors duration-200"
+                        className="px-2.5 py-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-805 rounded-md text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors duration-200"
                         disabled={roleChangeMutation.isPending}
                       >
-                        <option value="ADMIN" className="dark:bg-slate-900 dark:text-slate-100">Admin</option>
+                        {!isManager && <option value="ADMIN" className="dark:bg-slate-900 dark:text-slate-100">Admin</option>}
+                        <option value="MANAGER" className="dark:bg-slate-900 dark:text-slate-100">Manager</option>
                         <option value="MEMBER" className="dark:bg-slate-900 dark:text-slate-100">Member</option>
-                        <option value="VIEWER" className="dark:bg-slate-900 dark:text-slate-100">Viewer</option>
                       </select>
                     ) : (
                       <Badge value={member.role} />
                     )}
                   </td>
-                  {isAdmin && (
+                  {isManagerOrAdmin && (
                     <td className="px-6 py-4 whitespace-nowrap text-right">
-                      {member.userId !== currentUser?.id && (
+                      {member.userId !== currentUser?.id && !(isManager && member.role === 'ADMIN') && (
                         <button
                           onClick={() => {
                             if (confirm(`Remove ${member.user.displayName} from this project?`)) {
@@ -634,8 +635,8 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
           <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Project Labels</h3>
         </div>
 
-        {/* Create Label form (Admins & Members) */}
-        {!isViewer && (
+        {/* Create Label form (Admins & Managers) */}
+        {isManagerOrAdmin && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -754,7 +755,7 @@ export default function ProjectSettingsPage({ params }: { params: { projectId: s
                           <span className="font-semibold text-slate-800 dark:text-slate-200">{label.name}</span>
                         </div>
 
-                        {isAdmin && (
+                        {isManagerOrAdmin && (
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => {

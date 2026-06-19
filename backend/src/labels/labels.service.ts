@@ -28,11 +28,10 @@ export class LabelsService {
     }
     return member.role;
   }
-
   async create(userId: string, projectId: string, name: string, color: string) {
     const role = await this.checkProjectMembership(projectId, userId);
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot create labels');
+    if (role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER) {
+      throw new ForbiddenException('Only project admins and managers can create labels');
     }
 
     return this.prisma.label.create({
@@ -62,8 +61,8 @@ export class LabelsService {
     }
 
     const role = await this.checkProjectMembership(label.projectId, userId);
-    if (role !== ProjectRole.ADMIN) {
-      throw new ForbiddenException('Only project admins can update labels');
+    if (role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER) {
+      throw new ForbiddenException('Only project admins and managers can update labels');
     }
 
     const updatedLabel = await this.prisma.label.update({
@@ -116,8 +115,8 @@ export class LabelsService {
     }
 
     const role = await this.checkProjectMembership(label.projectId, userId);
-    if (role !== ProjectRole.ADMIN) {
-      throw new ForbiddenException('Only project admins can delete labels');
+    if (role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER) {
+      throw new ForbiddenException('Only project admins and managers can delete labels');
     }
 
     const taskLabels = await this.prisma.taskLabel.findMany({
@@ -177,8 +176,10 @@ export class LabelsService {
     }
 
     const role = await this.checkProjectMembership(task.projectId, userId);
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot modify task labels');
+    if (role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER) {
+      if (task.creatorId !== userId && task.assigneeId !== userId) {
+        throw new ForbiddenException('Members can only modify labels on their own tasks');
+      }
     }
 
     const existing = await this.prisma.taskLabel.findUnique({
@@ -234,8 +235,10 @@ export class LabelsService {
     }
 
     const role = await this.checkProjectMembership(task.projectId, userId);
-    if (role === ProjectRole.VIEWER) {
-      throw new ForbiddenException('Viewers cannot modify task labels');
+    if (role !== ProjectRole.ADMIN && role !== ProjectRole.MANAGER) {
+      if (task.creatorId !== userId && task.assigneeId !== userId) {
+        throw new ForbiddenException('Members can only modify labels on their own tasks');
+      }
     }
 
     const existing = await this.prisma.taskLabel.findUnique({

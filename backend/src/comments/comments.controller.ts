@@ -22,8 +22,9 @@ export class CommentsController {
     @Param('taskId') taskId: string,
     @GetUser('id') userId: string,
     @Body('text') text: string,
+    @Body('mentionedUserIds') mentionedUserIds?: string[],
   ) {
-    return this.commentsService.create(userId, taskId, text);
+    return this.commentsService.create(userId, taskId, text, mentionedUserIds);
   }
 
   @Get('tasks/:taskId/comments')

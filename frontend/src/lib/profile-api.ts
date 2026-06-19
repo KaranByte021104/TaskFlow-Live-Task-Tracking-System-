@@ -6,7 +6,7 @@ export async function getProfileApi(): Promise<User> {
   return response.data;
 }
 
-export async function updateProfileApi(data: { name?: string; email?: string }): Promise<User> {
+export async function updateProfileApi(data: { name?: string; email?: string; notifyByEmail?: boolean }): Promise<User> {
   const response = await api.patch<User>('/profile', data);
   return response.data;
 }

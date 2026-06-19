@@ -40,6 +40,6 @@ export class InviteMemberDto {
   @IsEmail({}, { message: 'Invalid email address' })
   email: string;
 
-  @IsEnum(ProjectRole, { message: 'Role must be ADMIN, MEMBER, or VIEWER' })
+  @IsEnum(ProjectRole, { message: 'Role must be ADMIN, MANAGER, or MEMBER' })
   role: ProjectRole;
 }

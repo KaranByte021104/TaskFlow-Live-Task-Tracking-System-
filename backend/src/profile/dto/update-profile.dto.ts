@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsEmail, MinLength } from 'class-validator';
+import { IsOptional, IsString, IsEmail, MinLength, IsBoolean } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -9,4 +9,8 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsEmail({}, { message: 'Please provide a valid email address' })
   email?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyByEmail?: boolean;
 }
