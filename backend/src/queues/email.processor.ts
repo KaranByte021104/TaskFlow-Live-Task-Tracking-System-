@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { MailService } from '../auth/mail.service';
 import { Logger } from '@nestjs/common';
@@ -9,6 +9,14 @@ export class EmailProcessor extends WorkerHost {
 
   constructor(private readonly mailService: MailService) {
     super();
+  }
+
+  @OnWorkerEvent('failed')
+  onFailed(job: Job, error: Error) {
+    this.logger.error(
+      `Job ${job?.id} failed for template "${job?.name}". Error: ${error.message}`,
+      error.stack,
+    );
   }
 
   async process(job: Job<any, any, string>): Promise<any> {

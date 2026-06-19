@@ -15,7 +15,7 @@ async function bootstrap() {
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
 
   // Set global route prefix
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', { exclude: ['health'] });
 
   // Register global exception filter
   app.useGlobalFilters(new GlobalExceptionFilter());

@@ -181,7 +181,7 @@ export default function ProjectChatPage({ params }: { params: { projectId: strin
                   </div>
 
                   {isUnread && !isActive && (
-                    <span className="bg-blue-600 text-white text-[9px] font-bold w-4.5 h-4.5 rounded-full flex items-center justify-center shrink-0">
+                    <span className="bg-blue-600 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0">
                       {chan.unreadCount}
                     </span>
                   )}
@@ -199,13 +199,13 @@ export default function ProjectChatPage({ params }: { params: { projectId: strin
           <button
             type="button"
             onClick={() => setShowArchived(!showArchived)}
-            className={`w-8 h-4.5 rounded-full p-0.5 transition duration-200 focus:outline-none ${
+            className={`w-8 h-5 rounded-full p-0.5 transition duration-200 focus:outline-none ${
               showArchived ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-800'
             }`}
           >
             <div
-              className={`w-3.5 h-3.5 rounded-full bg-white shadow-sm transform transition duration-200 ${
-                showArchived ? 'translate-x-3.5' : 'translate-x-0'
+              className={`w-4 h-4 rounded-full bg-white shadow-sm transform transition duration-200 ${
+                showArchived ? 'translate-x-3' : 'translate-x-0'
               }`}
             />
           </button>
@@ -217,6 +217,7 @@ export default function ProjectChatPage({ params }: { params: { projectId: strin
         {activeChannel ? (
           <div className="flex-1 flex flex-col min-h-0 p-4 md:p-6">
             <ChatRoom
+              key={activeChannel.id}
               roomId={activeChannel.id}
               type="channel"
               members={projectMembers}

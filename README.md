@@ -1,7 +1,7 @@
 # Task Tracker - Live Collaboration Tool
 
 ## Project Overview
-Task Tracker is a real-time, lightweight project management and collaborative task tracking application designed as a modern, high-performance alternative to platforms like Jira or Trello. It provides team members and project managers with interactive Kanban boards, activity feeds, instant notifications, task image attachments, custom labels, blocking task dependency enforcement, and detailed PDF/CSV data export capabilities, ensuring seamless workflow synchronization and robust project tracking.
+Task Tracker is a real-time project management and collaborative task tracking application. It provides team members with interactive Kanban boards, multi-channel chat systems, activity feeds, instant notifications, task/chat file attachments, custom labels, blocking task dependency enforcement, and project exports, ensuring seamless workflow synchronization and robust project tracking.
 
 ---
 
@@ -9,71 +9,78 @@ Task Tracker is a real-time, lightweight project management and collaborative ta
 
 | Technology | Role in Project |
 | :--- | :--- |
-| **Next.js** | React framework for building the user-friendly interactive frontend interface. |
-| **NestJS** | Progressive Node.js framework providing a modular, scalable REST API and WebSocket gateway. |
+| **Next.js** | React framework for building the frontend standalone user interface. |
+| **NestJS** | Progressive Node.js framework providing a modular REST API and WebSocket gateway. |
 | **PostgreSQL** | Relational SQL database utilized for storing structured relational models. |
 | **Prisma** | Modern ORM utilized for type-safe database queries and automated schema migrations. |
-| **Socket.IO** | Enables bidirectional, event-driven real-time communication (live updates, collaborative presence). |
-| **JWT** | JSON Web Tokens for stateless, secure user authentication and authorization. |
-| **Zustand** | Lightweight client-side state management for user authentication, toast alerts, and theme preferences. |
-| **React Query** | Handles server-state caching, fetching, synchronization, and optimistic UI updates on the frontend. |
-| **Tailwind CSS** | Utility-first CSS framework for responsive, modern styling and Dark Mode styling. |
-| **Multer** | Middleware for handling `multipart/form-data` uploads (used for task image attachments and user avatar uploads). |
-| **Nodemailer** | Library for sending secure OTP email messages via Gmail SMTP. |
-| **json2csv** | Utilized on the backend to parse database models and generate structured project CSV exports. |
-| **pdfmake** | Backend PDF generation engine used to compile structured PDF documents with custom styling and cover pages. |
+| **Redis** | In-memory storage acting as API cache, user presence tracker, and BullMQ broker. |
+| **BullMQ** | Message queue system for offloading asynchronous background tasks. |
+| **Socket.IO** | Enables bidirectional, event-driven real-time updates and presence. |
+| **JWT** | JSON Web Tokens with Secure Family Rotation (RTR) for stateless authorization. |
+| **Zustand** | Lightweight client-side state management for user authentication and theme preferences. |
+| **React Query** | Handles server-state caching, fetching, and optimistic UI updates on the frontend. |
+| **Tailwind CSS** | Utility-first CSS framework for responsive, modern styling and Dark Mode. |
+| **Multer** | Middleware for handling multipart/form-data uploads. |
+| **Nodemailer** | Library for sending secure email notifications and OTP recovery via Gmail SMTP. |
+| **json2csv & pdfmake** | Backend PDF and CSV compilers for compiling and downloading project snapshots. |
 
 ---
 
 ## Prerequisites
 
-To run this project locally, ensure you have the following installed:
+To run this project, ensure you have the following installed:
 - **Node.js** (v18 or higher)
 - **npm** (v9 or higher)
-- **PostgreSQL** (v14 or higher)
+- **Docker & Docker Compose** (for containerized setup)
+- **PostgreSQL & Redis** (if running services natively)
 
 ---
 
-## Getting Started
+## Running with Docker (Recommended)
 
-Follow these numbered steps to clone and run the application locally.
+Docker Compose containerizes the database, cache, backend, and frontend for clean execution.
 
-1. **Clone the Repository:**
+### Workflow A: Full-Stack Containerization
+This workflow brings up all four services inside containers.
+
+1. **Verify environment files exist**:
+   - Backend expects `backend/.env` (copied from `backend/.env.example`).
+   - Frontend expects `frontend/.env.local` (copied from `frontend/.env.example`).
+2. **Build and start the compose stack**:
+   From the root `task-tracker` folder, run:
    ```bash
-   git clone <repository-url>
-   cd task-tracker
+   docker compose up --build
    ```
+3. **Access the application**:
+   - **Frontend**: [http://localhost:3000](http://localhost:3000)
+   - **Backend API**: [http://localhost:3001/api](http://localhost:3001/api)
+   - **Health status**: [http://localhost:3001/health](http://localhost:3001/health)
 
-2. **Install Monorepo Dependencies:**
-   Install all package dependencies for both the frontend and backend from the monorepo root:
+---
+
+### Workflow B: Lightweight Running Mode (For Constrained Systems)
+On lower-resource machines (e.g. 8GB RAM or less), running multiple Docker containers alongside Next.js compiles can cause performance issues. You can instead run only the infrastructure (PostgreSQL and Redis) inside Docker, and run the backend/frontend servers natively.
+
+1. **Start PostgreSQL & Redis**:
+   ```bash
+   docker compose up postgres redis -d
+   ```
+2. **Install Monorepo Dependencies**:
+   From the root directory, run:
    ```bash
    npm install
    ```
-
-3. **Configure Environment Variables:**
-   * **Backend Configuration**: Copy `backend/.env.example` to `backend/.env` and update the database credentials and secrets:
-     ```bash
-     cp backend/.env.example backend/.env
-     ```
-   * **Frontend Configuration**: Copy `frontend/.env.example` to `frontend/.env.local` and define the backend endpoint URLs:
-     ```bash
-     cp frontend/.env.example frontend/.env.local
-     ```
-
-4. **Initialize Database and Run Migrations:**
-   Ensure your local PostgreSQL service is running and the database matches your configured `DATABASE_URL`. Run Prisma migrations to set up schema tables:
+3. **Initialize Database Schema**:
+   Generate the Prisma Client and deploy migrations:
    ```bash
    npm run prisma:migrate --workspace=backend
    ```
-   *(Alternatively, navigate to `backend` and run `npx prisma migrate dev`)*
-
-5. **Start the Development Servers:**
-   Launch both the frontend and backend services in parallel:
+4. **Launch Development Servers**:
    ```bash
    npm run dev
    ```
-   - **Frontend** runs on [http://localhost:3000](http://localhost:3000)
-   - **Backend** runs on [http://localhost:3001/api](http://localhost:3001/api) (WebSockets namespace on `/realtime`)
+   - **Frontend** runs natively on [http://localhost:3000](http://localhost:3000)
+   - **Backend** runs natively on [http://localhost:3001](http://localhost:3001)
 
 ---
 
@@ -83,93 +90,54 @@ Follow these numbered steps to clone and run the application locally.
 
 | Variable Name | Description | Example / Default Value |
 | :--- | :--- | :--- |
-| `DATABASE_URL` | PostgreSQL connection string containing credentials, host, and database name. | `postgresql://postgres:password@localhost:5432/task_tracker?schema=public` |
-| `JWT_SECRET` | Secret key used to sign and verify client authentication tokens. | `super-secret-jwt-key-replace-in-production` |
-| `JWT_EXPIRES_IN` | Token expiration lifespan. | `7d` |
+| `DATABASE_URL` | PostgreSQL connection string. | `postgresql://postgres:password@localhost:5432/task_tracker?schema=public` |
+| `REDIS_URL` | Redis connection endpoint string. | `redis://localhost:6379` |
+| `JWT_SECRET` | Secret key used to sign and verify client authentication tokens. | `super-secret-jwt-key` |
+| `JWT_EXPIRES_IN` | Life-span duration for access tokens. | `15m` |
 | `PORT` | Listening port for the NestJS API application server. | `3001` |
-| `FRONTEND_URL` | Allowed origin URL for CORS configuration. | `http://localhost:3000` |
-| `BACKEND_URL` | Base public URL of the backend (used to construct image attachment and avatar paths). | `http://localhost:3001` |
-| `SMTP_USER` | Gmail SMTP email address used to send verification and password reset emails. | `user@gmail.com` |
-| `SMTP_PASS` | Gmail app password (requires Google App Password configuration). | `abcd efgh ijkl mnop` |
-| `OTP_JWT_SECRET` | JWT secret used to sign and verify short-lived OTP verification tokens. | `super-secret-otp-jwt-key-replace-in-production` |
-
-### Frontend Environment Variables (`frontend/.env.local`)
-
-| Variable Name | Description | Example / Default Value |
-| :--- | :--- | :--- |
-| `NEXT_PUBLIC_API_URL` | Endpoint base URL for REST API requests. | `http://localhost:3001` |
-| `NEXT_PUBLIC_WS_URL` | Endpoint base URL for WebSocket gateway connections. | `http://localhost:3001` |
-
----
-
-## Architecture Decisions
-
-- **NestJS**: Chosen for its robust structure, clear dependency injection pattern, built-in validation support, and seamless WebSocket gateway support.
-- **Prisma**: Selected as the database ORM due to its auto-generated type safety, clear declarative schema models, and easy migration tooling.
-- **Zustand & React Query**: We separate global UI state (auth, toast messages, and dark/light themes managed by Zustand) from asynchronous server data (caching, pagination, and data mutations managed by React Query).
-- **Socket.IO Project-Based Rooms**: To minimize server memory and network overhead, users subscribe to specific rooms (`project:<projectId>`). Real-time status changes, comments, and task modifications are broadcast only to active members in that specific project space.
-- **Local Filesystem Image & Avatar Storage**: Local filesystem storage is utilized for handling task image attachments (under `uploads/tasks/`) and user avatars (under `uploads/avatars/`). This is a lightweight, zero-dependency approach perfect for local development and testing, keeping the system self-contained.
-- **Nodemailer with Gmail SMTP**: Selected to deliver reliable, transaction-based OTP (One-Time Password) recovery emails securely without registering with commercial email brokers.
+| `FRONTEND_URL` | Origin URL for CORS configuration. | `http://localhost:3000` |
+| `SMTP_USER` | Gmail address used to send verification and notification emails. | `user@gmail.com` |
+| `SMTP_PASS` | Gmail app password configuration. | `abcd efgh ijkl mnop` |
+| `OTP_JWT_SECRET` | JWT secret used to sign OTP verification tokens. | `super-secret-otp-jwt-key` |
 
 ---
 
 ## Full Features List
 
-- **Project Management**: Creation and customization of projects with role-based member invitations (Admin, Member, Viewer).
-- **Interactive Kanban Board**: Dynamic drag-and-drop task status updates across four columns: To Do, In Progress, Review, and Completed.
-- **Real-Time Collaboration**: Automatic syncing of task status changes, comments, attachments, and project presence indicators.
-- **Task Comments & Emoji Reactions**: Real-time collaborative comment threads under specific tasks with toggleable emoji reaction buttons.
-- **Image Attachments**: Support for uploading, viewing, and deleting multiple image files per task with instant live synchronization.
-- **Project-Specific Labels**: Define, edit, and apply custom colored tags to categorize tasks within a project.
-- **Task Dependencies**: Establish links between tasks (blocked by / blocking) with strict column transitions block (e.g. cannot start a task if its blockers are unresolved).
-- **Audit Logs & History**: Real-time logging of task updates (creation, title/description edits, assignee modifications, due dates, status shifts) visible in an expanded history view.
-- **Unified Activity Feed**: Dynamic log of all project and member activities per project space.
-- **Dashboard Statistics**: Global and project-specific charts displaying overall completion progress.
-- **User Profile Page**: Custom user settings panel enabling name and email updates, alongside custom avatar uploads (with auto-updating fallback initials).
-- **Theme Toggle**: Full light and dark mode styling with persistent local settings and native date indicator inversion.
-- **Optimistic UI & Toasts**: Instant feedback via toast notifications and fluid UI responses.
-- **Optimistic Concurrency Control**: Prevents users from overwriting each other's changes if updates happen simultaneously.
-- **OTP Password Recovery**: Secure password reset flow using a 6-digit OTP code sent via Gmail SMTP, verified with a short-lived token.
-- **Change Password**: Allows logged-in users to update their password from the sidebar, automatically logging them out and triggering a success notification on redirect.
-- **Show/Hide Password Toggle**: Independent visibility toggle button (eye/eye-off icons) integrated into every password input field.
-- **CSV and PDF Export**: Export comprehensive project snapshots (tasks, comments, activity log) into high-fidelity PDF layouts (with cover pages) and CSV tables.
-- **Board Date Filters**: Client-side filtering by "Created Date" or "Due Date" using preset ranges ("Today", "This Week", "This Month") or a "Custom Range" picker.
-- **Auto-Hide Old Tasks**: Cleans up the board by hiding tasks older than 7 days from all columns by default.
+- **Project Management**: Project creation with custom colors and statistics tracking.
+- **Interactive Kanban Board**: Drag-and-drop status transitions with column limit indicators.
+- **Real-Time Collaboration**: Automatic syncing of tasks, comments, and member presence via Socket.IO.
+- **Multi-Channel Team Chat**: Public and private channels, archiving controls, inline media rendering, and direct messaging.
+- **Background Mailer**: BullMQ queues with Redis for asynchronous notification and OTP delivery.
+- **Task Dependencies**: Strict blocked-by enforcement (cannot start a task until blocking tasks are resolved) with circular dependency protection.
+- **Audit Logs & History**: Record of changes on tasks displayed in a timeline view.
+- **Unified Search**: Relational text search spanning projects, tasks, comments, files, and chat messages.
+- **Rate Limiting**: Global sliding window rate limiting (100 req/min per IP) to prevent API flooding.
+- **CSV and PDF Export**: Multi-page project data compilation.
+- **Theme Toggle**: Full light/dark mode styling.
 
 ---
 
 ## Role Permissions
 
-| Action | Admin | Member | Viewer |
-| :--- | :---: | :---: | :---: |
-| **Create Project** | Yes | Yes | Yes *(Independent creator)* |
-| **Delete Project** | Yes *(Owner only)* | No | No |
-| **Invite Members** | Yes | No | No |
-| **Change Member Roles** | Yes | No | No |
-| **Create Tasks** | Yes | Yes | No |
-| **Edit Tasks** | Yes | Yes | No |
-| **Delete Tasks** | Yes *(Or Task Creator)* | No *(Unless Task Creator)* | No |
-| **Post Comments** | Yes | Yes | Yes |
-| **Edit/Delete Comments** | Yes *(Creator only)* | Yes *(Creator only)* | Yes *(Creator only)* |
-| **Add Emoji Reactions** | Yes | Yes | Yes |
-| **Upload Images** | Yes | Yes | No |
-| **Delete Images** | Yes | Yes *(Uploader only)* | No |
-| **Create/Edit/Delete Labels** | Yes | No | No |
-| **Add/Remove Task Labels** | Yes | Yes | No |
-| **Add/Remove Task Dependencies**| Yes | Yes | No |
-| **Update Own Profile** | Yes | Yes | Yes |
-| **Export Project Data (CSV/PDF)**| Yes | Yes | Yes |
-
-*Note: Board date filters and auto-hide are display-only features and are available to all roles equally.*
+| Action | Admin | Manager | Member | Viewer |
+| :--- | :---: | :---: | :---: | :---: |
+| **Delete Project** | Yes *(Owner)* | No | No | No |
+| **Invite Members / Change Roles** | Yes | No | No | No |
+| **Create/Edit/Archive Channels** | Yes | Yes | Yes *(Owner)*| No |
+| **Create Tasks** | Yes | Yes | Yes | No |
+| **Edit Tasks / Manage Dependencies**| Yes | Yes | Yes | No |
+| **Delete Tasks** | Yes | Yes | No *(Unless creator)*| No |
+| **Upload Project Files** | Yes | Yes | Yes | No |
+| **Delete Project Files** | Yes | Yes | Yes *(Uploader)*| No |
+| **Post Comments / Add Reactions** | Yes | Yes | Yes | Yes |
 
 ---
 
 ## Known Limitations
 
-- **No Email Verification**: Accounts are registered instantly without email validation.
-- **Local Filesystem Storage**: Uploaded files are stored locally, which does not persist across scaled container instances (production requires moving to S3, Cloudinary, or equivalent).
-- **In-Memory Presence Tracking**: Active user project rooms are tracked inside the application's RAM. A horizontal-scaling model would require a Redis adapter.
-- **No Rate Limiting**: The API endpoints are not rate-limited.
-- **No File Content Scan**: Uploaded image attachments undergo extension and MIME verification but are not scanned for malicious scripts or malware.
-- **Server-Side PDF Generation**: PDF documents are fully compiled in-memory on the backend using `pdfmake`, which may cause resource usage spikes for very large project exports with hundreds of tasks.
-- **Frontend-Only Date Filters**: Date filtering and auto-hiding are handled entirely in memory on the client side. For very large projects with thousands of tasks, switching filters may result in a slight rendering delay.
+1. **IP-Based Rate Limiting Bypass**: IP-based throttling can be bypassed if an attacker rotates their IP address (production requires additional web application firewalls or API gateway shielding).
+2. **Search Scaling**: Text queries use PostgreSQL `ILIKE` operations. This does not scale efficiently for huge databases (production would require Elasticsearch or Postgres full-text search indexes).
+3. **Single-Instance Redis**: Presence and BullMQ tracking assume a single Redis instance. Scale out requires setting up Redis Sentinel or Redis Cluster.
+4. **Gmail SMTP Limits**: Transactional emails are sent via Gmail SMTP, which has strict daily sending caps. Production setups should migrate to SES, SendGrid, or Mailgun.
+5. **Non-Optimized Chat Images**: Uploaded chat images are served at original resolutions, which can degrade rendering speeds for channels with heavy image attachments (production requires thumbnail generation pipelines).

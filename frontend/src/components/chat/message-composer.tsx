@@ -195,8 +195,11 @@ export default function MessageComposer({ onSend, members, onTyping }: MessageCo
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (isTypingRef.current) {
+        onTyping(false);
+      }
     };
-  }, []);
+  }, [onTyping]);
 
   return (
     <div className="relative border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 p-2 space-y-2 shadow-xs transition duration-150">

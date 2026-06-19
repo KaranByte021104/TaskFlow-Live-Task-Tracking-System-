@@ -51,12 +51,18 @@ export class ChatService {
       });
     }
 
+    const lastRead = await this.prisma.channelLastRead.findUnique({
+      where: {
+        channelId_userId: { channelId: channel.id, userId },
+      },
+    });
+
     const unreadCount = await this.prisma.message.count({
       where: {
         channelId: channel.id,
         senderId: { not: userId },
         createdAt: {
-          gt: member.lastReadAt,
+          gt: lastRead ? lastRead.lastReadAt : member.joinedAt,
         },
       },
     });
@@ -301,11 +307,16 @@ export class ChatService {
 
     // Update last read of sender
     if (channelId && projectId) {
-      await this.prisma.projectMember.update({
+      await this.prisma.channelLastRead.upsert({
         where: {
-          userId_projectId: { userId, projectId },
+          channelId_userId: { channelId, userId },
         },
-        data: {
+        update: {
+          lastReadAt: new Date(),
+        },
+        create: {
+          channelId,
+          userId,
           lastReadAt: new Date(),
         },
       });
@@ -371,6 +382,43 @@ export class ChatService {
     // Emit live update
     const roomName = channelId ? `channel:${channelId}` : `conversation:${conversationId}`;
     this.realtimeGateway.sendToRoom(roomName, 'message:new', message);
+
+    if (channelId && projectId) {
+      const channel = await this.prisma.channel.findUnique({
+        where: { id: channelId },
+      });
+      if (channel) {
+        if (!channel.isPrivate) {
+          this.realtimeGateway.sendToRoom(`project:${projectId}`, 'channel:message_received', {
+            channelId,
+            projectId,
+          });
+        } else {
+          const members = await this.prisma.channelMember.findMany({
+            where: { channelId },
+            select: { userId: true },
+          });
+          for (const m of members) {
+            this.realtimeGateway.sendToUser(m.userId, 'channel:message_received', {
+              channelId,
+              projectId,
+            });
+          }
+        }
+      }
+    } else if (conversationId) {
+      const participants = await this.prisma.conversationParticipant.findMany({
+        where: { conversationId },
+        select: { userId: true },
+      });
+      for (const p of participants) {
+        if (p.userId !== userId) {
+          this.realtimeGateway.sendToUser(p.userId, 'conversation:message_received', {
+            conversationId,
+          });
+        }
+      }
+    }
 
     return message;
   }
@@ -451,11 +499,16 @@ export class ChatService {
     });
     if (!channel) throw new NotFoundException('Channel not found');
 
-    await this.prisma.projectMember.update({
+    await this.prisma.channelLastRead.upsert({
       where: {
-        userId_projectId: { userId, projectId: channel.projectId },
+        channelId_userId: { channelId, userId },
       },
-      data: {
+      update: {
+        lastReadAt: new Date(),
+      },
+      create: {
+        channelId,
+        userId,
         lastReadAt: new Date(),
       },
     });
@@ -612,12 +665,17 @@ export class ChatService {
     // Calculate unread count for each channel
     const channelsWithUnread = await Promise.all(
       channels.map(async (chan) => {
+        const lastRead = await this.prisma.channelLastRead.findUnique({
+          where: {
+            channelId_userId: { channelId: chan.id, userId },
+          },
+        });
         const unreadCount = await this.prisma.message.count({
           where: {
             channelId: chan.id,
             senderId: { not: userId },
             createdAt: {
-              gt: member.lastReadAt,
+              gt: lastRead ? lastRead.lastReadAt : member.joinedAt,
             },
           },
         });

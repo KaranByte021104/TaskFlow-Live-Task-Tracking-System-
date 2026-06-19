@@ -201,6 +201,7 @@ export default function MessagesPage() {
         {activeConversation && currentUser ? (
           <div className="flex-1 flex flex-col min-h-0 p-6">
             <ChatRoom
+              key={activeConversation.id}
               roomId={activeConversation.id}
               type="conversation"
               members={chatMembers}
@@ -231,6 +232,7 @@ export default function MessagesPage() {
               ← Back to messages
             </button>
             <ChatRoom
+              key={activeConversation.id}
               roomId={activeConversation.id}
               type="conversation"
               members={chatMembers}

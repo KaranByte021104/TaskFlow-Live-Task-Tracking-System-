@@ -37,6 +37,7 @@ model User {
   projectFiles ProjectFile[]
   createdChannels Channel[]   @relation("ChannelCreator")
   channelMemberships ChannelMember[]
+  channelLastReads ChannelLastRead[]
 
   @@map("users")
   @@index([displayName])
@@ -308,6 +309,7 @@ model Channel {
   creator     User?    @relation("ChannelCreator", fields: [creatorId], references: [id], onDelete: SetNull)
   messages    Message[]
   members     ChannelMember[]
+  lastReads   ChannelLastRead[]
 
   @@map("channels")
 }
@@ -412,3 +414,18 @@ model ProjectFile {
 
   @@map("project_files")
 }
+
+model ChannelLastRead {
+  id         String   @id @default(cuid())
+  channelId  String
+  userId     String
+  lastReadAt DateTime @default(now())
+
+  channel    Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("channel_last_reads")
+}
+
+

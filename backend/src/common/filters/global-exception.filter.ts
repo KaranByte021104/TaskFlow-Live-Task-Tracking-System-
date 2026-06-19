@@ -4,12 +4,15 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger('GlobalExceptions');
+
   catch(exception: any, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -53,6 +56,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           : 'Invalid token';
     } else if (exception instanceof Error) {
       message = exception.message;
+    }
+
+    if (status >= 500 || !(exception instanceof HttpException)) {
+      this.logger.error(
+        `Unhandled Exception at ${request.method} ${request.url}: ${exception?.message || exception}`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+    } else {
+      this.logger.warn(
+        `Handled Exception at ${request.method} ${request.url} - Status: ${status} - Message: ${message}`,
+      );
     }
 
     response.status(status).json({

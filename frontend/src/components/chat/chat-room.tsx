@@ -55,7 +55,7 @@ export default function ChatRoom({ roomId, type, members, title, subtitle, class
     markReadApi(roomId, type)
       .then(() => {
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
-        queryClient.invalidateQueries({ queryKey: ['project-channel', roomId] });
+        queryClient.invalidateQueries({ queryKey: ['project-channels'] });
       })
       .catch((err) => console.warn('Failed to mark chat as read:', err));
   }, [roomId, type, messages.length, queryClient]);
@@ -104,6 +104,7 @@ export default function ChatRoom({ roomId, type, members, title, subtitle, class
       // Trigger read state
       await markReadApi(roomId, type);
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['project-channels'] });
     } catch (err) {
       console.error('Failed to send message:', err);
       throw err;

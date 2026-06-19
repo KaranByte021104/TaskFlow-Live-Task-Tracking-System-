@@ -13,6 +13,11 @@ export function useChatRealtime(roomId: string | null, type: 'channel' | 'conver
   const [typingUsers, setTypingUsers] = useState<{ id: string; name: string }[]>([]);
   const typingTimeoutRef = useRef<{ [userId: string]: NodeJS.Timeout }>({});
 
+  // Reset typing indicators when room changes
+  useEffect(() => {
+    setTypingUsers([]);
+  }, [roomId]);
+
   useEffect(() => {
     if (!socket || !roomId) return;
 
@@ -57,7 +62,7 @@ export function useChatRealtime(roomId: string | null, type: 'channel' | 'conver
 
       // Invalidate conversations list so unread counts / preview updates
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      queryClient.invalidateQueries({ queryKey: ['project-channel'] });
+      queryClient.invalidateQueries({ queryKey: ['project-channels'] });
     };
 
     // Handle typing indicator updates

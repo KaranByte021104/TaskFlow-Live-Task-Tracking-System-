@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { searchApi, SearchResults } from '@/lib/search-api';
 import { getOrCreateConversationApi } from '@/lib/chat-api';
@@ -23,10 +23,34 @@ interface SearchOverlayProps {
 
 export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [isNavigating, setIsNavigating] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const routeRef = useRef({ pathname, search: searchParams?.toString() });
+
+  // Update route baseline when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      routeRef.current = { pathname, search: searchParams?.toString() };
+      setIsNavigating(false);
+    }
+  }, [isOpen, pathname, searchParams]);
+
+  // Close only if route changes while open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const currentSearch = searchParams?.toString();
+    if (pathname !== routeRef.current.pathname || currentSearch !== routeRef.current.search) {
+      onClose();
+    }
+  }, [pathname, searchParams, isOpen, onClose]);
 
   // Debounce query
   useEffect(() => {
@@ -79,7 +103,7 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   };
 
   const handleResultClick = (type: keyof SearchResults, item: any) => {
-    onClose();
+    setIsNavigating(true);
     if (type === 'projects') {
       router.push(`/dashboard/projects/${item.id}`);
     } else if (type === 'tasks') {
@@ -107,8 +131,15 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
     >
       <div
         ref={overlayRef}
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl transition duration-150 animate-in fade-in zoom-in-95 duration-200"
+        className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl transition duration-150 animate-in fade-in zoom-in-95 duration-200"
       >
+        {/* Loading Overlay */}
+        {(isNavigating || startDmMutation.isPending) && (
+          <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 z-50 flex flex-col items-center justify-center space-y-3.5 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Loading page...</span>
+          </div>
+        )}
         {/* Search Input Bar */}
         <div className="flex items-center space-x-3.5 px-4.5 py-4.5 border-b border-slate-200 dark:border-slate-800">
           <Search className="w-5 h-5 text-slate-400 dark:text-slate-500 shrink-0" />

@@ -261,6 +261,14 @@ export function useProjectRealtime(projectId: string | null) {
       queryClient.invalidateQueries({ queryKey: ['notifications', 'list'] });
     };
 
+    const handleChannelMessageReceived = (data: { channelId: string; projectId: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['project-channels', data.projectId] });
+    };
+
+    const handleConversationMessageReceived = (data: { conversationId: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    };
+
     socket.on('connect', handleConnect);
     socket.on('authenticated', joinRoom);
     socket.on('presence:update', handlePresence);
@@ -275,6 +283,8 @@ export function useProjectRealtime(projectId: string | null) {
     socket.on('task:images_updated', handleTaskImagesUpdated);
     socket.on('comment:reaction_updated', handleCommentReactionUpdated);
     socket.on('notification:new', handleNotificationNew);
+    socket.on('channel:message_received', handleChannelMessageReceived);
+    socket.on('conversation:message_received', handleConversationMessageReceived);
 
     return () => {
       socket.off('connect', handleConnect);
@@ -291,6 +301,8 @@ export function useProjectRealtime(projectId: string | null) {
       socket.off('task:images_updated', handleTaskImagesUpdated);
       socket.off('comment:reaction_updated', handleCommentReactionUpdated);
       socket.off('notification:new', handleNotificationNew);
+      socket.off('channel:message_received', handleChannelMessageReceived);
+      socket.off('conversation:message_received', handleConversationMessageReceived);
 
       if (socket.connected && projectId) {
         socket.emit('leaveProject', projectId);

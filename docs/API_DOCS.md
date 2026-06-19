@@ -2,31 +2,36 @@
 
 This document covers all REST API endpoints available in the Task Tracker backend.
 
-All routes are prefixed with `/api`. Authenticated endpoints require a Bearer token in the `Authorization` header:
+All routes are prefixed with `/api` (except `/health`). Authenticated endpoints require a Bearer token in the `Authorization` header:
 `Authorization: Bearer <JWT_TOKEN>`
 
 ---
 
 ## Table of Contents
-1. [Authentication Endpoints](#authentication-endpoints)
-2. [Profile Endpoints](#profile-endpoints)
-3. [Projects Endpoints](#projects-endpoints)
-4. [Project Members Endpoints](#project-members-endpoints)
-5. [Labels Endpoints](#labels-endpoints)
-6. [Tasks Endpoints](#tasks-endpoints)
-7. [Comments & Reactions Endpoints](#comments--reactions-endpoints)
-8. [Task Images Endpoints](#task-images-endpoints)
-9. [Activities Endpoints](#activities-endpoints)
+1. [Authentication Endpoints](#1-authentication-endpoints)
+2. [Profile Endpoints](#2-profile-endpoints)
+3. [Projects Endpoints](#3-projects-endpoints)
+4. [Project Members Endpoints](#4-project-members-endpoints)
+5. [Labels Endpoints](#5-labels-endpoints)
+6. [Tasks Endpoints](#6-tasks-endpoints)
+7. [Comments & Reactions Endpoints](#7-comments--reactions-endpoints)
+8. [Task Images Endpoints](#8-task-images-endpoints)
+9. [Activities Endpoints](#9-activities-endpoints)
+10. [Notifications Endpoints](#10-notifications-endpoints)
+11. [Chat (Channels & Messages) Endpoints](#11-chat-channels--messages-endpoints)
+12. [Project Files Endpoints](#12-project-files-endpoints)
+13. [Search Endpoints](#13-search-endpoints)
+14. [Health Check Endpoint](#14-health-check-endpoint)
 
 ---
 
-## Authentication Endpoints
+## 1. Authentication Endpoints
 
 ### 1. User Registration
 Creates a new user account.
 - **HTTP Method**: `POST`
 - **Path**: `/api/auth/register`
-- **Authentication**: None
+- **Authentication**: None (Rate limit: 5 requests per minute)
 - **Request Body**:
   - `name` (string, required): Full name or display name.
   - `email` (string, required): Valid email address (must be unique).
@@ -50,32 +55,23 @@ Creates a new user account.
     "avatarUrl": null,
     "createdAt": "2026-06-05T10:06:06.000Z"
   },
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
-- **Error Responses**:
-  - `400 Bad Request`: Validation failure.
-  - `409 Conflict`: Duplicate entry error.
 
 ---
 
 ### 2. User Login
-Authenticates an existing user and issues a token.
+Authenticates an existing user and issues access/refresh tokens.
 - **HTTP Method**: `POST`
 - **Path**: `/api/auth/login`
-- **Authentication**: None
+- **Authentication**: None (Rate limit: 5 requests per minute)
 - **Request Body**:
   - `email` (string, required)
   - `password` (string, required)
 
-#### Example Request
-```json
-{
-  "email": "jane@example.com",
-  "password": "securepassword123"
-}
-```
-#### Example Response (`200 OK`)
+#### Example Response (`201 Created`)
 ```json
 {
   "user": {
@@ -84,15 +80,49 @@ Authenticates an existing user and issues a token.
     "displayName": "Jane Doe",
     "avatarUrl": null
   },
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
-- **Error Responses**:
-  - `401 Unauthorized`: Invalid credentials.
 
 ---
 
-### 3. Get Current User Profile
+### 3. Session Token Refresh
+Rotates current refresh token to issue a new access/refresh token pair.
+- **HTTP Method**: `POST`
+- **Path**: `/api/auth/refresh`
+- **Authentication**: None (Rate limit: 10 requests per minute)
+- **Request Body**:
+  - `refreshToken` (string, required): The active refresh token.
+
+#### Example Response (`201 Created`)
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+---
+
+### 4. User Logout
+Invalidates the submitted refresh token family, logging the user out.
+- **HTTP Method**: `POST`
+- **Path**: `/api/auth/logout`
+- **Authentication**: None
+- **Request Body**:
+  - `refreshToken` (string, required): The active refresh token.
+
+#### Example Response (`201 Created`)
+```json
+{
+  "success": true
+}
+```
+
+---
+
+### 5. Get Current User Profile
 Retrieves authenticated user metadata.
 - **HTTP Method**: `GET`
 - **Path**: `/api/auth/me`
@@ -106,17 +136,18 @@ Retrieves authenticated user metadata.
   "displayName": "Jane Doe",
   "avatarUrl": null,
   "createdAt": "2026-06-05T10:06:06.000Z",
-  "updatedAt": "2026-06-05T10:06:06.000Z"
+  "updatedAt": "2026-06-05T10:06:06.000Z",
+  "notifyByEmail": true
 }
 ```
 
 ---
 
-### 4. Request Password Reset OTP
+### 6. Request Password Reset OTP
 Generates a secure 6-digit OTP code and emails it to the user.
 - **HTTP Method**: `POST`
 - **Path**: `/api/auth/request-otp`
-- **Authentication**: None
+- **Authentication**: None (Rate limit: 3 requests per 15 minutes)
 - **Request Body**:
   - `email` (string, required)
 
@@ -129,7 +160,7 @@ Generates a secure 6-digit OTP code and emails it to the user.
 
 ---
 
-### 5. Verify Password Reset OTP
+### 7. Verify Password Reset OTP
 Verifies the 6-digit OTP and returns a short-lived verification token.
 - **HTTP Method**: `POST`
 - **Path**: `/api/auth/verify-otp`
@@ -147,7 +178,7 @@ Verifies the 6-digit OTP and returns a short-lived verification token.
 
 ---
 
-### 6. Set New Password
+### 8. Set New Password
 Uses the verification token to securely set a new password.
 - **HTTP Method**: `POST`
 - **Path**: `/api/auth/set-new-password`
@@ -165,7 +196,7 @@ Uses the verification token to securely set a new password.
 
 ---
 
-### 7. Change Password
+### 9. Change Password
 Allows an authenticated user to change their password by verifying their current password.
 - **HTTP Method**: `POST`
 - **Path**: `/api/auth/change-password`
@@ -184,7 +215,7 @@ Allows an authenticated user to change their password by verifying their current
 
 ---
 
-## Profile Endpoints
+## 2. Profile Endpoints
 
 ### 1. Get Profile
 Retrieves the logged-in user's profile information.
@@ -192,66 +223,29 @@ Retrieves the logged-in user's profile information.
 - **Path**: `/api/profile`
 - **Authentication**: Required (JWT)
 
-#### Example Response (`200 OK`)
-```json
-{
-  "id": "cuid-user-123",
-  "email": "jane@example.com",
-  "displayName": "Jane Doe",
-  "avatarUrl": "http://localhost:3001/uploads/avatars/uuid-avatar.jpg",
-  "createdAt": "2026-06-05T10:06:06.000Z"
-}
-```
-
 ---
 
 ### 2. Update Profile
-Modifies user profile settings (name/email). Validates email uniqueness.
+Modifies user profile settings (name/email) and toggles email notification preferences.
 - **HTTP Method**: `PATCH`
 - **Path**: `/api/profile`
 - **Authentication**: Required (JWT)
 - **Request Body**:
   - `displayName` (string, optional)
   - `email` (string, optional)
-
-#### Example Request
-```json
-{
-  "displayName": "Jane D. Smith",
-  "email": "jane.smith@example.com"
-}
-```
-#### Example Response (`200 OK`)
-```json
-{
-  "id": "cuid-user-123",
-  "email": "jane.smith@example.com",
-  "displayName": "Jane D. Smith",
-  "avatarUrl": null
-}
-```
+  - `notifyByEmail` (boolean, optional)
 
 ---
 
 ### 3. Upload Profile Avatar
-Uploads a custom profile picture. Overwrites/deletes the previous avatar file on disk if it exists.
+Uploads a custom profile picture. Overwrites/deletes the previous avatar file on disk.
 - **HTTP Method**: `POST`
 - **Path**: `/api/profile/avatar`
 - **Authentication**: Required (JWT)
 - **Headers**:
   - `Content-Type: multipart/form-data`
 - **Payload**:
-  - `avatar` (File, required): The image file.
-- **File constraints**:
-  - Allowed MIME types: `image/jpeg`, `image/png`, `image/webp`.
-  - Max size: `2 MB`.
-
-#### Example Response (`201 Created`)
-```json
-{
-  "avatarUrl": "http://localhost:3001/uploads/avatars/4172f8a8-b98a-45c1-92ea-2a9010abccde.jpg"
-}
-```
+  - `avatar` (File, required): Max size `2 MB`, JPEG/PNG/WebP.
 
 ---
 
@@ -261,16 +255,9 @@ Removes the profile avatar and deletes the physical file from disk.
 - **Path**: `/api/profile/avatar`
 - **Authentication**: Required (JWT)
 
-#### Example Response (`200 OK`)
-```json
-{
-  "message": "Avatar removed successfully."
-}
-```
-
 ---
 
-## Projects Endpoints
+## 3. Projects Endpoints
 
 ### 1. Create Project
 Initializes a new project workspace. The creator is assigned the `ADMIN` role.
@@ -282,26 +269,6 @@ Initializes a new project workspace. The creator is assigned the `ADMIN` role.
   - `description` (string, optional)
   - `color` (string, optional)
 
-#### Example Request
-```json
-{
-  "name": "Apollo Project",
-  "description": "Building the Next.js landing page",
-  "color": "#10b981"
-}
-```
-#### Example Response (`201 Created`)
-```json
-{
-  "id": "cuid-proj-apollo",
-  "name": "Apollo Project",
-  "description": "Building the Next.js landing page",
-  "color": "#10b981",
-  "createdAt": "2026-06-05T10:06:06.000Z",
-  "updatedAt": "2026-06-05T10:06:06.000Z"
-}
-```
-
 ---
 
 ### 2. List Projects
@@ -309,25 +276,6 @@ Retrieves all projects the user belongs to, including completion percentages.
 - **HTTP Method**: `GET`
 - **Path**: `/api/projects`
 - **Authentication**: Required (JWT)
-
-#### Example Response (`200 OK`)
-```json
-[
-  {
-    "id": "cuid-proj-apollo",
-    "name": "Apollo Project",
-    "description": "Building the Next.js landing page",
-    "color": "#10b981",
-    "createdAt": "2026-06-05T10:06:06.000Z",
-    "updatedAt": "2026-06-05T10:06:06.000Z",
-    "completionPercentage": 45,
-    "_count": {
-      "tasks": 12,
-      "members": 3
-    }
-  }
-]
-```
 
 ---
 
@@ -344,10 +292,6 @@ Modifies project name, description, or color.
 - **HTTP Method**: `PATCH`
 - **Path**: `/api/projects/:id`
 - **Authentication**: Required (JWT. Only project `ADMIN`)
-- **Request Body**:
-  - `name` (string, optional)
-  - `description` (string, optional)
-  - `color` (string, optional)
 
 ---
 
@@ -368,87 +312,38 @@ Retrieves status distribution, priorities, and upcoming tasks in the next 7 days
 ---
 
 ### 7. Export Project as CSV
-Generates and downloads a CSV export containing structured sections of Tasks, Comments, and Project Activities.
+Generates and downloads a CSV export.
 - **HTTP Method**: `GET`
 - **Path**: `/api/projects/:projectId/export/csv`
 - **Authentication**: Required (JWT. User must be a member)
-- **Response Headers**:
-  - `Content-Type: text/csv`
-  - `Content-Disposition: attachment; filename="project-export-[id]-[timestamp].csv"`
-
-#### Example Request
-`GET /api/projects/cuid-proj-apollo/export/csv`
 
 ---
 
 ### 8. Export Project as PDF
-Generates and downloads a high-fidelity PDF document containing a Cover page, Tasks tabular summary, Comments, and Activity Timeline logs.
+Generates and downloads a high-fidelity PDF document.
 - **HTTP Method**: `GET`
 - **Path**: `/api/projects/:projectId/export/pdf`
 - **Authentication**: Required (JWT. User must be a member)
-- **Response Headers**:
-  - `Content-Type: application/pdf`
-  - `Content-Disposition: attachment; filename="project-export-[id]-[timestamp].pdf"`
-
-#### Example Request
-`GET /api/projects/cuid-proj-apollo/export/pdf`
 
 ---
 
 ### 9. Get Dashboard Statistics
-Retrieves overall summary statistics (counts of projects, tasks, assigned tasks, and overdue tasks) across all projects that the authenticated user belongs to.
+Retrieves counts of projects, tasks, assigned tasks, and overdue tasks.
 - **HTTP Method**: `GET`
 - **Path**: `/api/projects/dashboard/stats`
 - **Authentication**: Required (JWT)
 
-#### Example Response (`200 OK`)
-```json
-{
-  "totalProjects": 3,
-  "totalTasks": 15,
-  "assignedTasks": 5,
-  "overdueTasks": 1
-}
-```
-
 ---
 
 ### 10. Get User Assigned Tasks
-Retrieves all tasks assigned to the authenticated user across all projects they have membership in.
+Retrieves all tasks assigned to the authenticated user across all projects.
 - **HTTP Method**: `GET`
 - **Path**: `/api/projects/tasks/assigned`
 - **Authentication**: Required (JWT)
 
-#### Example Response (`200 OK`)
-```json
-[
-  {
-    "id": "cuid-task-001",
-    "title": "Write API documentation",
-    "description": "Complete Markdown file for the API routes",
-    "status": "TODO",
-    "priority": "HIGH",
-    "projectId": "cuid-proj-apollo",
-    "assigneeId": "cuid-user-123",
-    "creatorId": "cuid-user-456",
-    "dueDate": "2026-06-08T17:00:00.000Z",
-    "order": 0,
-    "createdAt": "2026-06-05T10:06:06.000Z",
-    "updatedAt": "2026-06-05T10:06:06.000Z",
-    "project": {
-      "name": "Apollo Project",
-      "color": "#10b981"
-    },
-    "_count": {
-      "comments": 2
-    }
-  }
-]
-```
-
 ---
 
-## Project Members Endpoints
+## 4. Project Members Endpoints
 
 ### 1. Add / Invite Member
 Adds a registered user into a project.
@@ -457,24 +352,7 @@ Adds a registered user into a project.
 - **Authentication**: Required (JWT. Only project `ADMIN`)
 - **Request Body**:
   - `email` (string, required)
-  - `role` (enum `ADMIN` | `MEMBER` | `VIEWER`, required)
-
-#### Example Response (`201 Created`)
-```json
-{
-  "id": "cuid-member-rec-2",
-  "userId": "cuid-user-helper",
-  "projectId": "cuid-proj-apollo",
-  "role": "MEMBER",
-  "joinedAt": "2026-06-05T10:06:06.000Z",
-  "user": {
-    "id": "cuid-user-helper",
-    "displayName": "Alex Helper",
-    "email": "team@example.com",
-    "avatarUrl": null
-  }
-}
-```
+  - `role` (enum `ADMIN` | `MEMBER` | `MANAGER`, required)
 
 ---
 
@@ -484,39 +362,25 @@ Modifies member access level.
 - **Path**: `/api/projects/:id/members/:memberId`
 - **Authentication**: Required (JWT. Only project `ADMIN`)
 - **Request Body**:
-  - `role` (enum `ADMIN` | `MEMBER` | `VIEWER`, required)
+  - `role` (enum `ADMIN` | `MEMBER` | `MANAGER`, required)
 
 ---
 
 ### 3. Remove Member
-Kicks a member out of a project. Prevents removing the last admin.
+Kicks a member out of a project.
 - **HTTP Method**: `DELETE`
 - **Path**: `/api/projects/:id/members/:memberId`
 - **Authentication**: Required (JWT. Only project `ADMIN`)
 
 ---
 
-## Labels Endpoints
+## 5. Labels Endpoints
 
 ### 1. Create Label
 Creates a custom label tag within a project.
 - **HTTP Method**: `POST`
 - **Path**: `/api/projects/:projectId/labels`
 - **Authentication**: Required (JWT. Only project `ADMIN`)
-- **Request Body**:
-  - `name` (string, required)
-  - `color` (string, required): Hex color code.
-
-#### Example Response (`201 Created`)
-```json
-{
-  "id": "cuid-lbl-001",
-  "name": "Bug",
-  "color": "#ef4444",
-  "projectId": "cuid-proj-apollo",
-  "createdAt": "2026-06-05T10:06:06.000Z"
-}
-```
 
 ---
 
@@ -533,14 +397,11 @@ Modifies a label's name or color.
 - **HTTP Method**: `PATCH`
 - **Path**: `/api/labels/:labelId`
 - **Authentication**: Required (JWT. Only project `ADMIN`)
-- **Request Body**:
-  - `name` (string, optional)
-  - `color` (string, optional)
 
 ---
 
 ### 4. Delete Label
-Deletes a label. Automatically unlinks it from all tasks.
+Deletes a label.
 - **HTTP Method**: `DELETE`
 - **Path**: `/api/labels/:labelId`
 - **Authentication**: Required (JWT. Only project `ADMIN`)
@@ -551,18 +412,7 @@ Deletes a label. Automatically unlinks it from all tasks.
 Attaches a label to a task.
 - **HTTP Method**: `POST`
 - **Path**: `/api/tasks/:taskId/labels`
-- **Authentication**: Required (JWT. User must be project `ADMIN` or `MEMBER`)
-- **Request Body**:
-  - `labelId` (string, required)
-
-#### Example Response (`201 Created`)
-```json
-{
-  "id": "cuid-task-lbl-link",
-  "taskId": "cuid-task-001",
-  "labelId": "cuid-lbl-001"
-}
-```
+- **Authentication**: Required (JWT. User must be project `ADMIN`, `MANAGER`, or `MEMBER`)
 
 ---
 
@@ -570,52 +420,17 @@ Attaches a label to a task.
 Detaches a label from a task.
 - **HTTP Method**: `DELETE`
 - **Path**: `/api/tasks/:taskId/labels/:labelId`
-- **Authentication**: Required (JWT. User must be project `ADMIN` or `MEMBER`)
+- **Authentication**: Required (JWT. User must be project `ADMIN`, `MANAGER`, or `MEMBER`)
 
 ---
 
-## Tasks Endpoints
+## 6. Tasks Endpoints
 
 ### 1. Create Task
 Adds a task to a project.
 - **HTTP Method**: `POST`
 - **Path**: `/api/projects/:projectId/tasks`
-- **Authentication**: Required (JWT. User must be project `ADMIN` or `MEMBER`)
-- **Request Body**:
-  - `title` (string, required)
-  - `description` (string, optional)
-  - `status` (enum `TODO` | `IN_PROGRESS` | `REVIEW` | `COMPLETED`, optional)
-  - `priority` (enum `LOW` | `MEDIUM` | `HIGH`, optional)
-  - `assigneeId` (string, optional)
-  - `dueDate` (ISO-8601 string, optional)
-
-#### Example Request
-```json
-{
-  "title": "Write API documentation",
-  "description": "Complete Markdown file for the API routes",
-  "status": "TODO",
-  "priority": "HIGH",
-  "dueDate": "2026-06-08T17:00:00.000Z"
-}
-```
-#### Example Response (`201 Created`)
-```json
-{
-  "id": "cuid-task-001",
-  "title": "Write API documentation",
-  "description": "Complete Markdown file for the API routes",
-  "status": "TODO",
-  "priority": "HIGH",
-  "projectId": "cuid-proj-apollo",
-  "assigneeId": null,
-  "creatorId": "cuid-user-123",
-  "dueDate": "2026-06-08T17:00:00.000Z",
-  "order": 0,
-  "createdAt": "2026-06-05T10:06:06.000Z",
-  "updatedAt": "2026-06-05T10:06:06.000Z"
-}
-```
+- **Authentication**: Required (JWT. User must be project `ADMIN`, `MANAGER`, or `MEMBER`)
 
 ---
 
@@ -624,15 +439,6 @@ Lists tasks. Supports cursor-based infinite pagination, status/assignee filterin
 - **HTTP Method**: `GET`
 - **Path**: `/api/projects/:projectId/tasks`
 - **Authentication**: Required (JWT. User must be a member)
-- **Query Parameters**:
-  - `status` (enum, optional)
-  - `assigneeId` (string, optional)
-  - `search` (string, optional)
-  - `cursor` (string, optional)
-  - `limit` (string/number, optional, default: 50)
-
-> [!NOTE]
-> Board date filtering (Today, This Week, This Month, Custom Range, and 7-day auto-hide) is handled entirely on the frontend and does not require any additional API query parameters — this task list endpoint returns all tasks for the project and the client filters them locally in memory.
 
 ---
 
@@ -648,15 +454,7 @@ Retrieves details for a single task.
 Modifies a task. Enforces optimistic concurrency checks via `lastKnownUpdatedAt` and task dependency checks if shifting status to `IN_PROGRESS`.
 - **HTTP Method**: `PATCH`
 - **Path**: `/api/projects/:projectId/tasks/:taskId`
-- **Authentication**: Required (JWT. User must be project `ADMIN` or `MEMBER`)
-- **Request Body**:
-  - `title` (string, optional)
-  - `description` (string, optional)
-  - `status` (enum, optional)
-  - `priority` (enum, optional)
-  - `assigneeId` (string, optional, nullable)
-  - `dueDate` (ISO-8601 string, optional, nullable)
-  - `lastKnownUpdatedAt` (ISO-8601 string, optional)
+- **Authentication**: Required (JWT. User must be project `ADMIN`, `MANAGER`, or `MEMBER`)
 
 ---
 
@@ -664,7 +462,7 @@ Modifies a task. Enforces optimistic concurrency checks via `lastKnownUpdatedAt`
 Deletes a task.
 - **HTTP Method**: `DELETE`
 - **Path**: `/api/projects/:projectId/tasks/:taskId`
-- **Authentication**: Required (JWT. Only project `ADMIN` or the task `creator`)
+- **Authentication**: Required (JWT. Only project `ADMIN`, `MANAGER`, or the task `creator`)
 
 ---
 
@@ -674,45 +472,13 @@ Retrieves the list of blocking and blocked-by dependencies for a task.
 - **Path**: `/api/tasks/:taskId/dependencies`
 - **Authentication**: Required (JWT. User must be a member)
 
-#### Example Response (`200 OK`)
-```json
-{
-  "blockedBy": [
-    {
-      "id": "cuid-task-002",
-      "title": "Set up Database",
-      "status": "TODO"
-    }
-  ],
-  "blocking": []
-}
-```
-
 ---
 
 ### 7. Add Task Dependency
 Establishes a blocking relationship from one task to another. Performs circular dependency DFS traversal.
 - **HTTP Method**: `POST`
 - **Path**: `/api/tasks/:taskId/dependencies`
-- **Authentication**: Required (JWT. User must be project `ADMIN` or `MEMBER`)
-- **Request Body**:
-  - `blockedByTaskId` (string, required): The task ID that blocks the current task.
-
-#### Example Request
-```json
-{
-  "blockedByTaskId": "cuid-task-002"
-}
-```
-#### Example Response (`201 Created`)
-```json
-{
-  "id": "cuid-dependency-link",
-  "taskId": "cuid-task-001",
-  "blockedByTaskId": "cuid-task-002",
-  "createdAt": "2026-06-05T10:06:06.000Z"
-}
-```
+- **Authentication**: Required (JWT. User must be project `ADMIN`, `MANAGER`, or `MEMBER`)
 
 ---
 
@@ -720,7 +486,7 @@ Establishes a blocking relationship from one task to another. Performs circular 
 Deletes a blocking relationship between tasks.
 - **HTTP Method**: `DELETE`
 - **Path**: `/api/tasks/:taskId/dependencies/:blockedByTaskId`
-- **Authentication**: Required (JWT. User must be project `ADMIN` or `MEMBER`)
+- **Authentication**: Required (JWT. User must be project `ADMIN`, `MANAGER`, or `MEMBER`)
 
 ---
 
@@ -730,38 +496,15 @@ Retrieves the list of updates recorded for a specific task.
 - **Path**: `/api/tasks/:taskId/history`
 - **Authentication**: Required (JWT. User must be a member)
 
-#### Example Response (`200 OK`)
-```json
-[
-  {
-    "id": "cuid-act-001",
-    "type": "STATUS_CHANGED",
-    "projectId": "cuid-proj-apollo",
-    "userId": "cuid-user-123",
-    "taskId": "cuid-task-001",
-    "metadata": {
-      "oldStatus": "TODO",
-      "newStatus": "IN_PROGRESS"
-    },
-    "createdAt": "2026-06-05T10:06:06.000Z",
-    "user": {
-      "displayName": "Jane Doe"
-    }
-  }
-]
-```
-
 ---
 
-## Comments & Reactions Endpoints
+## 7. Comments & Reactions Endpoints
 
 ### 1. Post Comment
 Adds a text comment to a task.
 - **HTTP Method**: `POST`
 - **Path**: `/api/tasks/:taskId/comments`
 - **Authentication**: Required (JWT. User must be a member)
-- **Request Body**:
-  - `text` (string, required)
 
 ---
 
@@ -778,8 +521,6 @@ Edits user's own comment text.
 - **HTTP Method**: `PATCH`
 - **Path**: `/api/comments/:commentId`
 - **Authentication**: Required (JWT. Only comment creator)
-- **Request Body**:
-  - `text` (string, required)
 
 ---
 
@@ -787,97 +528,37 @@ Edits user's own comment text.
 Permanently deletes a comment.
 - **HTTP Method**: `DELETE`
 - **Path**: `/api/comments/:commentId`
-- **Authentication**: Required (JWT. Comment creator or project `ADMIN`)
+- **Authentication**: Required (JWT. Comment creator or project `ADMIN`, `MANAGER`)
 
 ---
 
 ### 5. Toggle Comment Reaction
-Toggles an emoji reaction on a comment. If the user has already reacted with the specified emoji, it is removed; otherwise, it is added.
+Toggles an emoji reaction on a comment.
 - **HTTP Method**: `POST`
 - **Path**: `/api/comments/:commentId/reactions`
 - **Authentication**: Required (JWT. User must be a member)
-- **Request Body**:
-  - `emoji` (string, required): Unicode emoji character.
-
-#### Example Request
-```json
-{
-  "emoji": "👍"
-}
-```
-#### Example Response (`201 Created`)
-```json
-[
-  {
-    "id": "cuid-react-001",
-    "commentId": "cuid-comm-001",
-    "userId": "cuid-user-123",
-    "emoji": "👍",
-    "createdAt": "2026-06-05T10:06:06.000Z"
-  }
-]
-```
 
 ---
 
 ### 6. List Comment Reactions
-Retrieves emoji reactions left on a comment, grouped by emoji character and listing the user details.
+Retrieves emoji reactions left on a comment, grouped by emoji character.
 - **HTTP Method**: `GET`
 - **Path**: `/api/comments/:commentId/reactions`
 - **Authentication**: Required (JWT. User must be a member)
 
-#### Example Response (`200 OK`)
-```json
-[
-  {
-    "emoji": "👍",
-    "count": 1,
-    "users": [
-      {
-        "id": "cuid-user-123",
-        "displayName": "Jane Doe",
-        "avatarUrl": null
-      }
-    ],
-    "reactedByMe": true
-  }
-]
-```
-
 ---
 
-## Task Images Endpoints
+## 8. Task Images Endpoints
 
 ### 1. Upload Task Images
 Attaches up to 10 image files to a task.
 - **HTTP Method**: `POST`
 - **Path**: `/api/tasks/:taskId/images`
-- **Authentication**: Required (JWT. User must be project `ADMIN` or `MEMBER`)
+- **Authentication**: Required (JWT. User must be project `ADMIN`, `MANAGER`, or `MEMBER`)
 - **Headers**:
   - `Content-Type: multipart/form-data`
 - **Payload**:
-  - `images` (File array, required): The image files.
-- **File constraints**:
-  - Allowed MIME types: `image/jpeg`, `image/png`, `image/webp`, `image/gif`.
-  - Max size: `5 MB` per file.
-  - Max quantity: `10` files per request.
-
-#### Example Response (`201 Created`)
-```json
-[
-  {
-    "id": "cuid-img-001",
-    "taskId": "cuid-task-001",
-    "originalName": "mockup.png",
-    "storedName": "e551e18f-a9cb-48d6-8488-295b9d3632ab.png",
-    "url": "http://localhost:3001/uploads/tasks/e551e18f-a9cb-48d6-8488-295b9d3632ab.png",
-    "size": 242100,
-    "mimeType": "image/png",
-    "uploaderId": "cuid-user-123",
-    "createdAt": "2026-06-05T10:06:06.000Z"
-  }
-]
-```
+  - `images` (File array, required): Max size `5 MB` per file, JPEG/PNG/WebP/GIF.
 
 ---
 
@@ -890,17 +571,291 @@ Retrieves all images associated with a task.
 ---
 
 ### 3. Delete Task Image
-Removes the image attachment. Deletes the file from local disk.
+Removes the image attachment and deletes the physical file.
 - **HTTP Method**: `DELETE`
 - **Path**: `/api/images/:imageId`
-- **Authentication**: Required (JWT. Only image uploader or project `ADMIN`)
+- **Authentication**: Required (JWT. Only image uploader or project `ADMIN`, `MANAGER`)
 
 ---
 
-## Activities Endpoints
+## 9. Activities Endpoints
 
 ### 1. List Project Activities
 Retrieves a list of up to 50 activities recorded in the project.
 - **HTTP Method**: `GET`
 - **Path**: `/api/projects/:id/activities`
 - **Authentication**: Required (JWT. User must be a member)
+
+---
+
+## 10. Notifications Endpoints
+
+### 1. List Notifications
+Retrieves recipient's notifications with cursor-based infinite pagination.
+- **HTTP Method**: `GET`
+- **Path**: `/api/notifications`
+- **Authentication**: Required (JWT)
+- **Query Parameters**:
+  - `limit` (number, optional, default: 10)
+  - `cursor` (string, optional)
+
+---
+
+### 2. Get Unread Notifications Count
+Retrieves count of unread notifications for the user.
+- **HTTP Method**: `GET`
+- **Path**: `/api/notifications/unread-count`
+- **Authentication**: Required (JWT)
+
+---
+
+### 3. Mark All Notifications as Read
+Marks all notifications for the user as read.
+- **HTTP Method**: `PATCH`
+- **Path**: `/api/notifications/read-all`
+- **Authentication**: Required (JWT)
+
+---
+
+### 4. Mark Single Notification as Read
+Marks a specific notification as read.
+- **HTTP Method**: `PATCH`
+- **Path**: `/api/notifications/:id/read`
+- **Authentication**: Required (JWT)
+
+---
+
+## 11. Chat (Channels & Messages) Endpoints
+
+### 1. Get Project General Channel
+Retrieves or creates the main default general channel for a project.
+- **HTTP Method**: `GET`
+- **Path**: `/api/projects/:projectId/channel`
+- **Authentication**: Required (JWT. User must be a member)
+
+---
+
+### 2. Create Project Channel
+Creates a new public or private channel inside a project.
+- **HTTP Method**: `POST`
+- **Path**: `/api/projects/:projectId/channels`
+- **Authentication**: Required (JWT. User must be a member)
+- **Request Body**:
+  - `name` (string, required): Channel slug name.
+  - `description` (string, optional)
+  - `isPrivate` (boolean, optional, default: false)
+  - `memberIds` (string[], optional): IDs of initial members for private channels.
+
+---
+
+### 3. List Project Channels
+Retrieves all public channels and private channels the user is a member of in a project.
+- **HTTP Method**: `GET`
+- **Path**: `/api/projects/:projectId/channels`
+- **Authentication**: Required (JWT. User must be a member)
+
+---
+
+### 4. Update Channel Info
+Modifies a channel's name or description.
+- **HTTP Method**: `PATCH`
+- **Path**: `/api/channels/:channelId`
+- **Authentication**: Required (JWT. User must be project Admin/Manager or the channel creator)
+
+---
+
+### 5. Archive Channel
+Archives a channel to prevent new messages (general channels cannot be archived).
+- **HTTP Method**: `POST`
+- **Path**: `/api/channels/:channelId/archive`
+- **Authentication**: Required (JWT. User must be project Admin/Manager or the channel creator)
+
+---
+
+### 6. Unarchive Channel
+Restores an archived channel.
+- **HTTP Method**: `POST`
+- **Path**: `/api/channels/:channelId/unarchive`
+- **Authentication**: Required (JWT. User must be project Admin/Manager or the channel creator)
+
+---
+
+### 7. Add Channel Members
+Invites users into a private channel.
+- **HTTP Method**: `POST`
+- **Path**: `/api/channels/:channelId/members`
+- **Authentication**: Required (JWT. User must be channel member)
+- **Request Body**:
+  - `memberIds` (string[], required)
+
+---
+
+### 8. Remove Channel Member
+Removes a user from a private channel.
+- **HTTP Method**: `DELETE`
+- **Path**: `/api/channels/:channelId/members/:targetUserId`
+- **Authentication**: Required (JWT. User must be channel member)
+
+---
+
+### 9. List Channel Members
+Retrieves the list of users belonging to a channel.
+- **HTTP Method**: `GET`
+- **Path**: `/api/channels/:channelId/members`
+- **Authentication**: Required (JWT. User must be a member)
+
+---
+
+### 10. List DM Conversations
+Retrieves all active direct messaging rooms the user belongs to.
+- **HTTP Method**: `GET`
+- **Path**: `/api/conversations`
+- **Authentication**: Required (JWT)
+
+---
+
+### 11. Start or Get DM Conversation
+Retrieves or creates a 1-to-1 conversation room with another user.
+- **HTTP Method**: `POST`
+- **Path**: `/api/conversations`
+- **Authentication**: Required (JWT)
+- **Request Body**:
+  - `otherUserId` (string, required)
+
+---
+
+### 12. Get DM Candidates List
+Retrieves other project members the user can start DMs with.
+- **HTTP Method**: `GET`
+- **Path**: `/api/conversations/candidates`
+- **Authentication**: Required (JWT)
+
+---
+
+### 13. Send Message (Channel / DM)
+Sends a message to a channel or DM conversation, supporting uploads and mentions.
+- **HTTP Method**: `POST`
+- **Path**: `/api/channels/:channelId/messages` OR `/api/conversations/:conversationId/messages`
+- **Authentication**: Required (JWT. User must be a member)
+- **Headers**:
+  - `Content-Type: multipart/form-data`
+- **Payload**:
+  - `content` (string, required)
+  - `mentionedUserIds` (string or string[], optional): JSON array string of mentioned user IDs.
+  - `attachments` (File array, optional): Up to 10 files (max 10MB per file).
+
+---
+
+### 14. Get Messages (Channel / DM)
+Retrieves message history. Supports cursor-based pagination.
+- **HTTP Method**: `GET`
+- **Path**: `/api/channels/:channelId/messages` OR `/api/conversations/:conversationId/messages`
+- **Authentication**: Required (JWT. User must be a member)
+- **Query Parameters**:
+  - `limit` (number, optional, default: 50)
+  - `cursor` (string, optional)
+
+---
+
+### 15. Mark Channel / DM as Read
+Updates the user's last read timestamp for the channel or DM room.
+- **HTTP Method**: `POST`
+- **Path**: `/api/channels/:channelId/read` OR `/api/conversations/:conversationId/read`
+- **Authentication**: Required (JWT. User must be a member)
+
+---
+
+## 12. Project Files Endpoints
+
+### 1. Upload Project Files
+Uploads up to 10 general project documents (PDF, Word, Excel, PowerPoint, ZIP, images).
+- **HTTP Method**: `POST`
+- **Path**: `/api/projects/:projectId/files`
+- **Authentication**: Required (JWT. User must be project Admin, Manager, or Member)
+- **Headers**:
+  - `Content-Type: multipart/form-data`
+- **Payload**:
+  - `files` (File array, required): Max 20MB per file.
+
+---
+
+### 2. List Project Files
+Retrieves all files attached to a project workspace.
+- **HTTP Method**: `GET`
+- **Path**: `/api/projects/:projectId/files`
+- **Authentication**: Required (JWT. User must be a member)
+
+---
+
+### 3. Delete Project File
+Removes file from project list and deletes the physical file.
+- **HTTP Method**: `DELETE`
+- **Path**: `/api/projects/:projectId/files/:fileId`
+- **Authentication**: Required (JWT. Only file uploader or project Admin/Manager)
+
+---
+
+## 13. Search Endpoints
+
+### 1. Unified Search
+Executes a relational `ILIKE` search across projects, tasks, comments, files, and chat messages based on permissions.
+- **HTTP Method**: `GET`
+- **Path**: `/api/search`
+- **Authentication**: Required (JWT)
+- **Query Parameters**:
+  - `q` (string, required): Search query.
+  - `scope` (string, optional): Filter scope (`projects`, `tasks`, `comments`, `files`, `messages`).
+
+---
+
+## 14. Health Check Endpoint
+
+### 1. Application Health Check
+Public indicator reporting database and Redis statuses. Used by container managers and monitoring tools.
+- **HTTP Method**: `GET`
+- **Path**: `/health` (Excludes `/api` prefix)
+- **Authentication**: None
+
+#### Example Response (`200 OK - Healthy`)
+```json
+{
+  "status": "ok",
+  "info": {
+    "database": {
+      "status": "up"
+    },
+    "redis": {
+      "status": "up"
+    }
+  },
+  "error": {},
+  "details": {
+    "database": {
+      "status": "up"
+    },
+    "redis": {
+      "status": "up"
+    }
+  }
+}
+```
+
+#### Example Response (`503 Service Unavailable - Down`)
+```json
+{
+  "status": "error",
+  "info": {},
+  "error": {
+    "database": {
+      "status": "down",
+      "message": "Can't reach PostgreSQL server at postgres:5432"
+    }
+  },
+  "details": {
+    "database": {
+      "status": "down",
+      "message": "Can't reach PostgreSQL server at postgres:5432"
+    }
+  }
+}
+```
