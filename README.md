@@ -120,17 +120,17 @@ On lower-resource machines (e.g. 8GB RAM or less), running multiple Docker conta
 
 ## Role Permissions
 
-| Action | Admin | Manager | Member | Viewer |
-| :--- | :---: | :---: | :---: | :---: |
-| **Delete Project** | Yes *(Owner)* | No | No | No |
-| **Invite Members / Change Roles** | Yes | No | No | No |
-| **Create/Edit/Archive Channels** | Yes | Yes | Yes *(Owner)*| No |
-| **Create Tasks** | Yes | Yes | Yes | No |
-| **Edit Tasks / Manage Dependencies**| Yes | Yes | Yes | No |
-| **Delete Tasks** | Yes | Yes | No *(Unless creator)*| No |
-| **Upload Project Files** | Yes | Yes | Yes | No |
-| **Delete Project Files** | Yes | Yes | Yes *(Uploader)*| No |
-| **Post Comments / Add Reactions** | Yes | Yes | Yes | Yes |
+| Action | Admin | Manager | Member |
+| :--- | :---: | :---: | :---: |
+| **Delete Project** | Yes *(Owner)* | No | No |
+| **Invite Members / Change Roles** | Yes | No | No |
+| **Create/Edit/Archive Channels** | Yes | Yes | Yes *(Owner)*|
+| **Create Tasks** | Yes | Yes | Yes |
+| **Edit Tasks / Manage Dependencies**| Yes | Yes | Yes |
+| **Delete Tasks** | Yes | Yes | No *(Unless creator)*|
+| **Upload Project Files** | Yes | Yes | Yes |
+| **Delete Project Files** | Yes | Yes | Yes *(Uploader)*|
+| **Post Comments / Add Reactions** | Yes | Yes | Yes |
 
 ---
 
