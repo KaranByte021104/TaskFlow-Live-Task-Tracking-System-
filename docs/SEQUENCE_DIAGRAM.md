@@ -10,7 +10,7 @@ sequenceDiagram
     actor UserA as Browser A (Sender)
     actor UserB as Browser B (Recipient)
     participant API as NestJS REST API
-    database DB as PostgreSQL DB
+    participant DB as PostgreSQL DB
     participant Gateway as Socket.IO Gateway
     participant Redis as Redis Server
     participant Queue as BullMQ (Email Queue)
