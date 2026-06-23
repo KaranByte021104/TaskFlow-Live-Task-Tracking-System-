@@ -63,6 +63,7 @@ export function useChatRealtime(roomId: string | null, type: 'channel' | 'conver
       // Invalidate conversations list so unread counts / preview updates
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['project-channels'] });
+      queryClient.invalidateQueries({ queryKey: ['project-channel'] });
     };
 
     // Handle typing indicator updates

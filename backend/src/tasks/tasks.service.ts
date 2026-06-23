@@ -143,6 +143,9 @@ export class TasksService {
       },
     });
 
+    // Invalidate stats cache before broadcasting so clients fetch fresh data
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
+
     // Broadcast event: task:created
     this.realtimeGateway.sendToProjectRoom(projectId, 'task:created', {
       task: {
@@ -164,8 +167,7 @@ export class TasksService {
       },
     );
 
-    // Invalidate stats cache
-    await this.cacheManager.del(`project-stats:project:${projectId}`);
+
 
     return task;
   }
@@ -466,6 +468,9 @@ export class TasksService {
       select: { displayName: true },
     });
 
+    // Invalidate stats cache before broadcasting
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
+
     // Broadcast event: task:updated (Send task ID and updated fields)
     this.realtimeGateway.sendToProjectRoom(projectId, 'task:updated', {
       task: updatedTask,
@@ -563,8 +568,7 @@ export class TasksService {
       }
     }
 
-    // Invalidate stats cache
-    await this.cacheManager.del(`project-stats:project:${projectId}`);
+
 
     return updatedTask;
   }
@@ -596,6 +600,9 @@ export class TasksService {
       select: { displayName: true },
     });
 
+    // Invalidate stats cache before broadcasting
+    await this.cacheManager.del(`project-stats:project:${projectId}`);
+
     // Broadcast event: task:deleted
     this.realtimeGateway.sendToProjectRoom(projectId, 'task:deleted', {
       taskId,
@@ -604,8 +611,7 @@ export class TasksService {
       userDisplayName: deleterUser?.displayName || 'Someone',
     });
 
-    // Invalidate stats cache
-    await this.cacheManager.del(`project-stats:project:${projectId}`);
+
 
     return { success: true, message: 'Task deleted successfully' };
   }

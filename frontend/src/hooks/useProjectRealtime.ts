@@ -263,6 +263,7 @@ export function useProjectRealtime(projectId: string | null) {
 
     const handleChannelMessageReceived = (data: { channelId: string; projectId: string }) => {
       queryClient.invalidateQueries({ queryKey: ['project-channels', data.projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project-channel', data.projectId] });
     };
 
     const handleConversationMessageReceived = (data: { conversationId: string }) => {
